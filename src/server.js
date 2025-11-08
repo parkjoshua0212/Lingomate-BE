@@ -1,4 +1,6 @@
 // src/server.js
+//To update EC2 server files with local files, use the following command in the terminal with path set to BackEnd directory:
+// rsync -avz --exclude 'node_modules' --exclude '.git' --exclude '.env' \-e "ssh -i ~/.ssh/LingomateEC2key.pem" \. ubuntu@ec2-16-184-11-218.ap-northeast-2.compute.amazonaws.com:~/app
 
 import express from 'express';
 // --- 1. '경비원' 라이브러리 '수입' ---
@@ -9,6 +11,9 @@ import { auth } from 'express-oauth2-jwt-bearer';
 import authRoutes from './routes/auth.routes.js'; 
 // (!!중요: 나중에 '채팅' API 만들면 그것도 수입해야 해)
 // import chatRoutes from './routes/chat.routes.js'; 
+import convRoutes from './routes/convRoutes.js';
+import bodyParser from 'body-parser';
+import cors from 'cors'; // CORS 미들웨어 수입
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -31,6 +36,11 @@ const checkJwt = auth({
 // (1) Postman이 보낸 JSON을 서버가 읽을 수 있게 함 (필수!)
 app.use(express.json()); 
 
+app.use(cors()); // 모든 도메인에서 오는 요청 허용
+app.use(bodyParser.json());
+
+app.get("/", (req, res) => res.send("Hello from Docker!"));//test code for docker message
+
 // (2) '/auth'로 시작하는 주소는 *경비원 검사 없이* 통과시킴
 //     (왜? '출입증' 받으러 온 사람(로그인/회원가입)까지 막으면 안 되니까!)
 app.use('/auth', authRoutes);
@@ -50,6 +60,9 @@ app.get('/api/protected', checkJwt, (req, res) => {
     authInfo: req.auth // <-- 여기 유저 정보(sub)가 들어있음
   });
 });
+
+app.use('/api/conversations', convRoutes);
+
 
 
 // --- 6. 서버 실행 ---
