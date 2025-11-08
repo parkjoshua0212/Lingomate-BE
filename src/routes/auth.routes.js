@@ -9,7 +9,7 @@ import { WebSocketServer } from 'ws';
 import { auth } from 'express-oauth2-jwt-bearer'; 
 
 // --- 2. 라우터들도 '수입' ---
-import authRoutes from './routes/auth.routes.js'; 
+import authRoutes from './auth.routes.js'; 
 // import chatRoutes from './routes/chat.routes.js'; 
 
 const app = express();
@@ -77,3 +77,5 @@ wss.on('connection', (ws) => {
 server.listen(PORT, () => {
   console.log(`[V4] HTTP 서버 및 WebSocket 서버가 ${PORT}에서 실행 중입니다!`);
 });
+
+export default app;

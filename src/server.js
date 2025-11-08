@@ -13,7 +13,6 @@ import authRoutes from './routes/auth.routes.js';
 // import chatRoutes from './routes/chat.routes.js'; 
 import convRoutes from './routes/convRoutes.js';
 import bodyParser from 'body-parser';
-import cors from 'cors'; // CORS 미들웨어 수입
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -35,8 +34,6 @@ const checkJwt = auth({
 // --- 5. 서버에 '미들웨어' 등록하기 ---
 // (1) Postman이 보낸 JSON을 서버가 읽을 수 있게 함 (필수!)
 app.use(express.json()); 
-
-app.use(cors()); // 모든 도메인에서 오는 요청 허용
 app.use(bodyParser.json());
 
 app.get("/", (req, res) => res.send("Hello from Docker!"));//test code for docker message
