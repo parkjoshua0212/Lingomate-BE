@@ -28,19 +28,15 @@ datasource db {
 
 //1. User Table {Authentication and Profile}
 model User {
-  //Fields
-  id              Int         @id @default(autoincrement()) @map("user_id")
-  passwordHash    String      @map("password_hash") @db.VarChar(255) // Hashed password
-  username        String      @unique @db.VarChar(100)
-  languagePref    String?     @default("ko") @map("language_pref") @db.VarChar(10)
-  voiceSetting    String?     @default("Kore") @map("voice_setting") @db.VarChar(50)
-  role            Role        @default(USER) // Premium or standard user
-  createdAt       DateTime    @default(now()) @map("created_at") @db.Timestamp(0)
-
-  // Relationships
-  conversations   Conversation[]
-
-  @@map("User") // Database table name
+  id             Int      @id @default(autoincrement()) @map("user_id")
+  auth0Sub       String   @unique @map("auth0_sub") 
+  username       String   @db.VarChar(100) 
+  languagePref   String?  @default("ko") @map("language_pref") @db.VarChar(10)
+  voiceSetting   String?  @default("Kore") @map("voice_setting") @db.VarChar(50)
+  role           Role     @default(USER)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+  conversations  Conversation[]
+  @@map("User")
 }
 
 // ENUM for User Role

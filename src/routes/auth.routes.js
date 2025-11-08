@@ -1,107 +1,79 @@
-// src/routes/auth.routes.js
+// src/server.js
 
 import express from 'express';
-import { PrismaClient } from '@prisma/client';
-import jwt from 'jsonwebtoken';
+// --- (수정 1) 'http'와 'ws' 라이브러리 '수입' ---
+import http from 'http';
+import { WebSocketServer } from 'ws';
 
-const router = express.Router();
-const prisma = new PrismaClient(); //##싱글톤패턴으로 수정?
+// --- 1. '경비원' 라이브러리 '수입' ---
+import { auth } from 'express-oauth2-jwt-bearer'; 
 
-//--- 테스트용: /auth/ (GET) ---
-//나중에 Postman으로 http://localhost:3000/auth/ 쳐서 "여기는..." 메시지 뜨는지 확인용
-router.get('/', (req, res) => {
-  res.send('여기는 Auth 라우터입니다!');
+// --- 2. 라우터들도 '수입' ---
+import authRoutes from './routes/auth.routes.js'; 
+// import chatRoutes from './routes/chat.routes.js'; 
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// --- 3. '.env' 파일에서 Auth0 키 값들 불러오기 ---
+const auth0Domain = process.env.AUTH0_DOMAIN;
+const auth0Audience = process.env.AUTH0_AUDIENCE;
+
+if (!auth0Domain || !auth0Audience) {
+  throw new Error('AUTH0_DOMAIN 또는 AUTH0_AUDIENCE가 .env 파일에 없습니다!');
+}
+
+// --- 4. '경비원( 미들웨어)' 설정하기 ---
+const checkJwt = auth({
+  issuerBaseURL: `https://${auth0Domain}`, // '출입증' 발급자
+  audience: auth0Audience,               // '출입증' 대상자
 });
 
-// --- /auth/signup (POST)  --- 회원가입 API (POST /auth/signup)
-router.post('/signup', async (req, res) => {
-  // 요청이 잘 왔는지 터미널에 로그 찍기
-  console.log('회원가입 요청 받음:', req.body); 
+// --- 5. 서버에 '미들웨어' 등록하기 ---
+app.use(express.json()); 
+app.use('/auth', authRoutes);
+// app.use('/api', checkJwt, chatRoutes); // <-- 나중에 이렇게 쓸 거야
 
-  try {
-    // Postman이 보낸 email, name을 꺼냄
-    const { email, name } = req.body; // Postman에서 email, name을 받기 ##Checking this part: prisma email, username field
-
-    if (!email || !name) {
-      return res.status(400).json({ message: 'Email과 Name은 필수입니다.' });
-    }
-
-    // Prisma를 사용해서 DB에 "user" 생성
-    const newUser = await prisma.user.create({
-      data: {  
-        // User 모델에 있는 필드들만 정확히 넣어준다
-        username: name, // Postman의 'name' 값을 DB의 'username' 필드에 넣음
-        passwordHash: 'dummy-password-123', // User 모델의 'passwordHash' 필드 
-
-        // role: 은 schema에서 @default(USER)가 처리
-        // createdAt: 은 schema에서 @default(now())가 처리
-      },
-    });
-
-    // 5. 성공 응답 보내기
-    res.status(201).json({ message: '가짜 회원가입 성공!', user: newUser });
-
-  } catch (error) {
-    // 6. 실패 응답
-    console.error('Prisma 에러:', error);
-    res.status(500).json({ message: '서버 에러', error: error.message });
-  }
+app.get('/api/protected', checkJwt, (req, res) => {
+  res.json({ 
+    message: '축하합니다! "출입증"이 확인됐습니다!',
+    authInfo: req.auth 
+  });
 });
 
-// --- 로그인 API (POST /auth/login) ---
-router.post('/login', async (req, res) => {
-  // Postman에서 보낸 { "username": "...", "passwordHash": "..." } 받기
-  console.log('로그인 요청 받음:', req.body);
+// --- (수정 2) Express 앱으로 'http' 서버 생성 ---
+// (app.listen() 대신 이 서버를 사용할 거야)
+const server = http.createServer(app);
 
-  try {
-    const { username, passwordHash } = req.body; //##prisma 해시값 말고 비밀번호로
+// --- (수정 3) WebSocket 서버 생성 및 'http' 서버에 연결 ---
+const wss = new WebSocketServer({ server });
 
-    // 필수 값 검사
-    if (!username || !passwordHash) {
-      return res.status(400).json({ message: 'Username과 PasswordHash는 필수입니다.' });
-    }
+// --- (수정 4) WebSocket 연결 처리 로직 (기본) ---
+// (제안서 의 "실시간 전송 구현"의 시작점)
+wss.on('connection', (ws) => {
+  console.log('[WebSocket] 클라이언트가 연결되었습니다.');
 
-    // DB에서 유저 찾기 (username으로)
-    const user = await prisma.user.findFirst({ //##findUnique 로 수정 @unique 주입하면
-      where: {
-        username: username,
-      },
-    });
-
-    // 유저가 없거나, 가짜 비밀번호가 틀리면 에러
-    // (!!나중에 진짜 암호화(bcrypt) 쓸 땐 이 로직 바꿔야 해!!)
-    if (!user || user.passwordHash !== passwordHash) {
-      return res.status(401).json({ message: '해당 유저를 찾을 수 없거나 비밀번호가 틀렸습니다.' });
-    }
-
-    // 4. 로그인 성공! "출입증(JWT)" 발급
+  // 클라이언트로부터 메시지를 받았을 때
+  ws.on('message', (message) => {
+    console.log(`[WebSocket] 메시지 수신: ${message}`);
     
-    // !!주의: 이 비밀 키는 절대 코드에 박아두면 안 돼!
-    // (나중에 팀원한테 'JWT_SECRET' 받아서 process.env.JWT_SECRET으로 바꿔야 해!)
-    const JWT_SECRET = 'my-temp-secret-key-for-testing'; 
+    // (테스트용) 일단 받은 메시지를 그대로 다시 보냄 (Echo)
+    ws.send(`서버가 받은 메시지: ${message}`); 
+  });
 
-    const token = jwt.sign(
-      { userId: user.id, role: user.role }, // 출입증에 담을 정보
-      JWT_SECRET,                          // 비밀 키로 서명
-      { expiresIn: '1h' }                 // 유효기간 (1시간)
-    );
+  // 클라이언트 연결이 끊겼을 때
+  ws.on('close', () => {
+    console.log('[WebSocket] 클라이언트 연결이 끊겼습니다.');
+  });
 
-    // 5. 성공! (토큰을 클라이언트에게 전달)
-    res.status(200).json({ 
-      message: '로그인 성공!', 
-      token: token, // <-- 발급된 출입증(토큰)
-      user: {
-        id: user.id,
-        username: user.username,
-      }
-    });
-
-  } catch (error) {
-    // 6. 서버 에러
-    console.error('로그인 에러:', error);
-    res.status(500).json({ message: '서버 에러', error: error.message });
-  }
+  // 에러 처리
+  ws.on('error', (error) => {
+    console.error('[WebSocket] 에러 발생:', error);
+  });
 });
 
-// 이 파일을 다른 곳에서 수입할 수 있게 수출
-export default router;
+
+// --- (수정 5) 'app.listen' 대신 'server.listen'으로 서버 실행 ---
+server.listen(PORT, () => {
+  console.log(`[V4] HTTP 서버 및 WebSocket 서버가 ${PORT}에서 실행 중입니다!`);
+});
