@@ -24,7 +24,7 @@ const PORT = process.env.PORT || 3000;
 
 // 4. .env 파일에서 Auth0 키 값 불러오기
 const auth0Domain = process.env.AUTH0_DOMAIN;
-const auth0Audience = process.env.AUDIENCE; // (팀원이 AUDIENCE로 썼을 수도 있으니 확인)
+const auth0Audience = process.env.AUTH0_AUDIENCE; // (팀원이 AUDIENCE로 썼을 수도 있으니 확인)
 // 만약 AUDIENCE가 안되면 이걸로 다시 바꿔: const auth0Audience = process.env.AUTH0_AUDIENCE;
 
 
