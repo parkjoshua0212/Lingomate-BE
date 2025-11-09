@@ -89,5 +89,7 @@ app.use('/api/conversations', convRoutes);
 
 // --- 6. 서버 실행 ---
 app.listen(PORT, () => {
+  console.log("AUTH0_DOMAIN:", process.env.AUTH0_DOMAIN);
   console.log(`[V3] Auth0 경비원이 배치된 서버가 ${PORT}에서 실행 중입니다!`);
-  console.log(`Swagger Docs: http://localhost:${PORT}/api-docs`);});
+  console.log(`Swagger Docs: http://localhost:${PORT}/api-docs`);
+});
