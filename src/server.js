@@ -1,6 +1,8 @@
 // src/server.js
 //To update EC2 server files with local files, use the following command in the terminal with path set to BackEnd directory:
 // rsync -avz --exclude 'node_modules' --exclude '.git' --exclude '.env' \-e "ssh -i ~/.ssh/LingomateEC2key.pem" \. ubuntu@ec2-16-184-11-218.ap-northeast-2.compute.amazonaws.com:~/app
+import dotenv from 'dotenv';
+dotenv.config();
 
 import express from 'express';
 // --- 1. '경비원' 라이브러리 '수입' ---
@@ -13,6 +15,10 @@ import authRoutes from './routes/auth.routes.js';
 // import chatRoutes from './routes/chat.routes.js'; 
 import convRoutes from './routes/convRoutes.js';
 import bodyParser from 'body-parser';
+
+// Swagger
+import swaggerUi from 'swagger-ui-express';
+import swaggerJSDoc from 'swagger-jsdoc';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -37,6 +43,25 @@ app.use(express.json());
 app.use(bodyParser.json());
 
 app.get("/", (req, res) => res.send("Hello from Docker!"));//test code for docker message
+
+
+// Swagger 옵션
+const options = {
+  definition: {
+    openapi: '3.0.0',
+    info: {
+      title: 'LingoMate API 문서',
+      version: '1.0.0',
+      description: '백엔드 Auth 관련 API 명세서입니다.',
+    },
+    servers: [{ url: `http://localhost:${PORT}` }],
+  },
+  apis: ['./src/routes/*.js'],
+};
+
+const specs = swaggerJsdoc(options);
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs));
+
 
 // (2) '/auth'로 시작하는 주소는 *경비원 검사 없이* 통과시킴
 //     (왜? '출입증' 받으러 온 사람(로그인/회원가입)까지 막으면 안 되니까!)
@@ -65,4 +90,4 @@ app.use('/api/conversations', convRoutes);
 // --- 6. 서버 실행 ---
 app.listen(PORT, () => {
   console.log(`[V3] Auth0 경비원이 배치된 서버가 ${PORT}에서 실행 중입니다!`);
-});
+  console.log(`Swagger Docs: http://localhost:${PORT}/api-docs`);});
