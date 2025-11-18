@@ -10,6 +10,7 @@ import express from 'express';
 import http from 'http'; // (웹소켓용)
 import { WebSocketServer } from 'ws'; // (웹소켓용)
 import { auth } from 'express-oauth2-jwt-bearer'; // (Auth0 경비원)
+import cors from 'cors';
 
 import swaggerUi from 'swagger-ui-express';
 import swaggerJSDoc from 'swagger-jsdoc';
@@ -31,6 +32,14 @@ const auth0Audience = process.env.AUTH0_AUDIENCE; // (팀원이 AUDIENCE로 썼�
 if (!auth0Domain || !auth0Audience) {
   throw new Error('AUTH0_DOMAIN 또는 AUTH0_AUDIENCE가 .env 파일에 없습니다!');
 }
+
+// ADD THIS MIDDLEWARE (Before any routes!)
+    app.use(cors({
+        origin: '*', // Allow ANY website to connect (Good for testing)
+        credentials: true
+    }));
+
+    app.use(express.json());
 
 // 5. '경비원( 미들웨어)' 설정하기
 const checkJwt = auth({
@@ -108,7 +117,7 @@ wss.on('connection', (ws) => {
 // '/api/conversations' 경로도 '출입증(checkJwt)'이 있어야만 접근하게 수정!
 app.use('/api/conversations', checkJwt, convRoutes(wss));
 
-app.use('/api'. checkJwt, apiRoutes(wss)); // '출입증'이 있어야만 접근 가능
+app.use('/api', checkJwt, apiRoutes(wss)); // '출입증'이 있어야만 접근 가능
 
 
 // --- 9. 통합 서버 실행 ---
