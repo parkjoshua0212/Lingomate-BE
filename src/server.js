@@ -10,7 +10,6 @@ import express from 'express';
 import http from 'http'; // (웹소켓용)
 import { WebSocketServer } from 'ws'; // (웹소켓용)
 import { auth } from 'express-oauth2-jwt-bearer'; // (Auth0 경비원)
-import bodyParser from 'body-parser'; // (JSON 파싱용)
 
 import swaggerUi from 'swagger-ui-express';
 import swaggerJSDoc from 'swagger-jsdoc';
@@ -18,6 +17,7 @@ import swaggerJSDoc from 'swagger-jsdoc';
 // 3. 모든 라우터 '수입'
 import authRoutes from './routes/auth.routes.js';
 import convRoutes from './routes/convRoutes.js';
+import apiRoutes from './routes/apiRoutes.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -40,14 +40,12 @@ const checkJwt = auth({
 
 // 6. 서버에 '미들웨어' 등록하기
 app.use(express.json());
-app.use(bodyParser.json());
+//app.use(bodyParser.json()); redundant with express.json
 
 // 7. REST API 라우터 등록
 app.get("/", (req, res) => res.send("Hello from Docker!")); // Docker 테스트용
 app.use('/auth', authRoutes); // Auth0 로그인/등록 (경비원 없음)
 
-// '/api/conversations' 경로도 '출입증(checkJwt)'이 있어야만 접근하게 수정!
-app.use('/api/conversations', checkJwt, convRoutes);
 
 // (팀원이 추가한 Swagger 옵션)
 const options = {
@@ -106,6 +104,11 @@ wss.on('connection', (ws) => {
     console.error('[WebSocket] 에러 발생:', error);
   });
 });
+
+// '/api/conversations' 경로도 '출입증(checkJwt)'이 있어야만 접근하게 수정!
+app.use('/api/conversations', checkJwt, convRoutes(wss));
+
+app.use('/api'. checkJwt, apiRoutes(wss)); // '출입증'이 있어야만 접근 가능
 
 
 // --- 9. 통합 서버 실행 ---

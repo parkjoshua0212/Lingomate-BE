@@ -1,6 +1,3 @@
-//AWS RDS master id = lingomate
-//AWS RDS master password = ***REMOVED_DB_PASSWORD***
-
 
 //install in terminal npm install prisma --save-dev
 //npm install @prisma/client
@@ -26,75 +23,122 @@ datasource db {
 // Core models {Tables} for the Conversation app
 //--------------------------------------------------------------------------------
 
-//1. User Table {Authentication and Profile}
+// 1. User Table {Authentication and Profile}
 model User {
-  id             Int      @id @default(autoincrement()) @map("user_id")
-  auth0Sub       String   @unique @map("auth0_sub") 
-  username       String   @db.VarChar(100) 
-  languagePref   String?  @default("ko") @map("language_pref") @db.VarChar(10)
-  voiceSetting   String?  @default("Kore") @map("voice_setting") @db.VarChar(50)
-  role           Role     @default(USER)
-  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamp(0)
-  conversations  Conversation[]
+  id            Int      @id @default(autoincrement()) @map("user_id")
+  auth0Sub      String   @unique @map("auth0_sub") 
+  username      String   @db.VarChar(100)
+  email         String?  @unique @db.VarChar(255) // New: For Profile
+  avatarUrl     String?  @map("avatar_url")       // New: For Profile Image
+  languagePref  String?  @default("ko") @map("language_pref") @db.VarChar(10)
+  
+  // Settings (from Design)
+  voiceSetting  String?  @default("Kore") @map("voice_setting") @db.VarChar(50)
+  toneSetting   String?  @default("casual") @map("tone_setting") // 'casual' or 'formal'
+  
+  role          Role     @default(USER)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+  
+  // Relationships
+  conversations Conversation[]
+  stats         UserStat?      // New: 1-to-1 relation for Dashboard
+  subscription  Subscription?  // New: 1-to-1 relation for Premium
+  payments      Payment[]
+
   @@map("User")
 }
 
-// ENUM for User Role
+// 2. User Statistics (New: For Dashboard/MyPage)
+model UserStat {
+  id             Int       @id @default(autoincrement())
+  userId         Int       @unique @map("user_id")
+  totalSentences Int       @default(0) @map("total_sentences")
+  totalTimeMins  Int       @default(0) @map("total_time_mins")
+  studyStreak    Int       @default(0) @map("study_streak")
+  lastStudyDate  DateTime? @map("last_study_date")
+
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@map("UserStat")
+}
+
+// 3. Subscription & Payments (New: For Premium Plan)
+model Subscription {
+  id        Int       @id @default(autoincrement())
+  userId    Int       @unique @map("user_id")
+  planName  String    @default("Free") // 'Free', 'Premium'
+  isActive  Boolean   @default(true)
+  expiresAt DateTime? @map("expires_at")
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@map("Subscription")
+}
+
+model Payment {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  amount    Float
+  currency  String   @default("KRW")
+  status    String   // 'PENDING', 'SUCCESS', 'FAILED'
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id])
+  @@map("Payment")
+}
+
 enum Role {
   USER
   PREMIUM
 }
 
-
-//2. Topic Table {Conversation Scenarios}
+// 4. Topic (Conversation Scenarios)
 model Topic {
- // Fields
-  id              Int       @id @default(autoincrement()) @map("topic_id")
-  titleJp         String    @map("title_jp") @db.VarChar(255) // Japanese title for display
-  titleEn         String    @map("title_en") @db.VarChar(255) // English title for display
-  startPrompt     String    @map("start_prompt") @db.Text     // Detailed instruction for the AI (system prompt)
-  category        String?   @db.VarChar(50)                    // e.g., 'Travel', 'Business'
+  id          Int      @id @default(autoincrement()) @map("topic_id")
+  titleJp     String   @map("title_jp") @db.VarChar(255)
+  titleEn     String   @map("title_en") @db.VarChar(255)
+  startPrompt String   @map("start_prompt") @db.Text 
+  category    String?  @db.VarChar(50)
+  imageUrl    String?  @map("image_url") // New: For UI thumbnails
 
-  // Relationships
-  conversations   Conversation[]
-
+  conversations Conversation[]
   @@map("Topic")
 }
 
-// 3. Conversation Table (Tracks a single chat session)
+// 5. Conversation (Tracks a single chat session)
 model Conversation {
-  // Fields
-  id              Int       @id @default(autoincrement()) @map("conversation_id")
-  userId          Int       @map("user_id")
-  topicId         Int       @map("topic_id")
-  languageUsed    String    @map("language_used") @db.VarChar(5) // Language used in this specific chat (e.g., 'en')
-  startedAt       DateTime  @default(now()) @map("started_at") @db.Timestamp(0)
-  endedAt         DateTime? @map("ended_at") @db.Timestamp(0)    // Null if the chat is still active
+  id           Int       @id @default(autoincrement()) @map("conversation_id")
+  userId       Int       @map("user_id")
+  topicId      Int       @map("topic_id")
+  languageUsed String    @map("language_used") @db.VarChar(5)
+  startedAt    DateTime  @default(now()) @map("started_at") @db.Timestamp(0)
+  endedAt      DateTime? @map("ended_at") @db.Timestamp(0)
 
-  // Relationships
-  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  topic           Topic     @relation(fields: [topicId], references: [id])
-  messages        Message[] // All messages belonging to this session
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  topic    Topic     @relation(fields: [topicId], references: [id])
+  messages Message[]
 
+  @@index([userId])
   @@map("Conversation")
 }
 
-// 4. Message Table (The chat transcript lines)
+// 6. Message (Chat Transcript + AI Feedback)
 model Message {
-  // Fields
-  id              Int           @id @default(autoincrement()) @map("message_id")
-  conversationId  Int           @map("conversation_id")
-  sender          MessageSender @default(USER) // 'user' or 'ai'
-  content         String        @db.Text
-  timestamp       DateTime      @default(now()) @db.Timestamp(0)
+  id             Int           @id @default(autoincrement()) @map("message_id")
+  conversationId Int           @map("conversation_id")
+  sender         MessageSender @default(USER)
+  content        String        @db.Text
+  timestamp      DateTime      @default(now()) @db.Timestamp(0)
 
-  // Relationships
-  conversation    Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  // AI Feedback Fields (New: For "Review" screen)
+  correction     String?       @db.Text // The corrected sentence from AI
+  explanation    String?       @db.Text // Grammar explanation
+  isBookmarked   Boolean       @default(false) // If user wants to save this expression
 
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId]) 
   @@map("Message")
 }
 
-// ENUM for Message Sender
 enum MessageSender {
   USER
   AI

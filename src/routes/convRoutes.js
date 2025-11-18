@@ -1,19 +1,21 @@
-import express from 'express';
-import {
-  createConversation,
-  getConversations,
-  deleteConversation,
-} from '../controllers/convController.js';
+// convroutes.js (Updated for ESM)
+
+import express from 'express'; // Use ESM import here too
+import convController from '../controllers/convController.js'; // Ensure controller also uses ESM or require()
 
 const router = express.Router();
 
-// POST /api/conversations
-router.post('/', createConversation);
+// 💡 FIX: Replace 'module.exports' with 'export default'
+export default (wss) => {
+    // Pass the wss instance to the controller initializer
+    const controller = convController(wss); 
 
-// GET /api/conversations/:userId
-router.get('/:userId', getConversations);
+    // 1. Create a new conversation
+    router.post('/', controller.newConversation);
 
-// DELETE /api/conversations/:id
-router.delete('/:id', deleteConversation);
+    // ... (rest of the routes)
+    router.get('/:userId', controller.getConversations);
+    router.delete('/:conversationId', controller.deleteConversation);
 
-export default router;
+    return router;
+};
