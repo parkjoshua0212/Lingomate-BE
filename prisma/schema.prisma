@@ -61,7 +61,7 @@ model UserStat {
   @@map("UserStat")
 }
 
-// 3. Subscription & Payments (New: For Premium Plan)
+// 3. Subscription & Payments
 model Subscription {
   id        Int       @id @default(autoincrement())
   userId    Int       @unique @map("user_id")
@@ -71,6 +71,25 @@ model Subscription {
 
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@map("Subscription")
+}
+
+model Payment {
+  id            Int      @id @default(autoincrement())
+  userId        Int      @map("user_id")
+  amount        Float
+  currency      String   @default("KRW")
+  status        String   // 'PENDING', 'SUCCESS', 'FAILED'
+  platform      String   @default("GOOGLE_PLAY") // 'KAKAO', 'GOOGLE_PLAY'
+  
+  // [NEW] Google Play Fields
+  purchaseToken String?  @db.Text // Google tokens are very long
+  orderId       String?  @db.VarChar(255)
+  productId     String?  @db.VarChar(100) // e.g., 'com.lingomate.premium_monthly'
+
+  createdAt     DateTime @default(now())
+
+  user          User     @relation(fields: [userId], references: [id])
+  @@map("Payment")
 }
 
 model Payment {

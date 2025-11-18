@@ -3,19 +3,16 @@ import prisma from '../lib/prisma.js';
 export default (wss) => {
     const controller = {};
 
-    // 1. Get User Profile & Stats (GET /api/users/me)
-    // Combines User info + UserStat info
+    // 1. Get User Profile (GET /api/users/me)
     controller.getMyProfile = async (req, res) => {
-        // In real app, use req.auth.sub from Auth0 to find user
-        // For now, we assume userId is passed in headers or query for testing, OR logic uses a test ID
         const auth0Sub = req.auth?.sub; 
 
         try {
             const user = await prisma.user.findUnique({
                 where: { auth0Sub: auth0Sub },
                 include: {
-                    stats: true,       // Load Dashboard numbers
-                    subscription: true // Load Plan status
+                    stats: true,       
+                    subscription: true 
                 }
             });
 
@@ -27,8 +24,55 @@ export default (wss) => {
         }
     };
 
-    // 2. Update Settings (PUT /api/users/me/settings)
-    // Handles Voice (Male/Female) and Tone (Formal/Casual)
+    // [NEW] 2. Get Dashboard Data (GET /api/dashboard)
+    // Fetches Profile + Stats + Recent Activity
+    controller.getDashboard = async (req, res) => {
+        const auth0Sub = req.auth?.sub;
+
+        try {
+            // Find the user first
+            const user = await prisma.user.findUnique({
+                where: { auth0Sub: auth0Sub },
+                include: {
+                    stats: true,
+                    subscription: true
+                }
+            });
+
+            if (!user) return res.status(404).json({ error: "User not found" });
+
+            // Also fetch their 3 most recent conversations
+            const recentConversations = await prisma.conversation.findMany({
+                where: { userId: user.id },
+                take: 3, // Limit to 3
+                orderBy: { startedAt: 'desc' },
+                include: {
+                    topic: {
+                        select: { titleEn: true, titleJp: true, imageUrl: true }
+                    }
+                }
+            });
+
+            // Combine everything into one nice response
+            const dashboardData = {
+                user: {
+                    username: user.username,
+                    avatarUrl: user.avatarUrl,
+                    plan: user.subscription?.planName || "Free"
+                },
+                stats: user.stats, // { totalSentences, studyStreak... }
+                recentActivity: recentConversations
+            };
+
+            res.status(200).json(dashboardData);
+
+        } catch (err) {
+            console.error("Dashboard Error:", err);
+            res.status(500).json({ error: "Failed to load dashboard" });
+        }
+    };
+
+    // 3. Update Settings (PUT /api/users/me/settings)
     controller.updateSettings = async (req, res) => {
         const auth0Sub = req.auth?.sub;
         const { voiceSetting, toneSetting, nickname } = req.body;
