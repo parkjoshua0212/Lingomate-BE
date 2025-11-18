@@ -1,17 +1,14 @@
-// src/routes/auth.routes.js
-
 import express from 'express';
-import prisma from '../lib/prisma.js'; // 싱글톤 prisma '수입'
+import prisma from '../lib/prisma.js'; 
 import { auth } from 'express-oauth2-jwt-bearer';
 
 const router = express.Router();
 
-// --- '경비원' 설정 (라우트 파일 내에서) ---
 const auth0Domain = process.env.AUTH0_DOMAIN;
 const auth0Audience = process.env.AUTH0_AUDIENCE;
 
 if (!auth0Domain || !auth0Audience) {
-  throw new Error('AUTH0_DOMAIN 또는 AUTH0_AUDIENCE가 .env 파일에 없습니다!');
+  throw new Error('AUTH0_DOMAIN or AUTH0_AUDIENCE is missing in .env file!');
 }
 
 const checkJwt = auth({
@@ -19,53 +16,86 @@ const checkJwt = auth({
   audience: auth0Audience,
 });
 
-// --- ★★★ 핵심 API ★★★ ---
-// "Auth0 로그인 성공 후, 우리 DB에 유저 등록/확인" API
-// (POST /auth/register-if-needed)
+// --- Login / Register Logic ---
+// POST /auth/register-if-needed
 router.post('/register-if-needed', checkJwt, async (req, res) => {
   try {
-    // 1. '경비원(checkJwt)'이 검증한 '출입증'에서 유저 ID(sub)를 꺼냄
+    // 1. Get Auth0 ID from the token
     const auth0Sub = req.auth.payload.sub;
     if (!auth0Sub) {
-      return res.status(400).json({ message: 'Auth0 sub(ID)가 없습니다.' });
+      return res.status(400).json({ message: 'Auth0 sub (ID) is missing.' });
     }
 
-    // 2. Postman(프론트엔드)이 보낸 'username'을 꺼냄
-    const { username } = req.body;
+    // 2. Get User Profile Data from the Frontend Request Body
+    // [FIX]: Added email and avatarUrl to support the new Profile screen
+    const { username, email, avatarUrl } = req.body;
+    
     if (!username) {
-      return res.status(400).json({ message: 'username이 없습니다.' });
+      return res.status(400).json({ message: 'username is required.' });
     }
 
-    // 3. DB에서 "이 Auth0 ID를 가진 유저가 이미 있나?" 확인
+    // 3. Check if user exists in DB
     let user = await prisma.user.findUnique({
-      where: {
-        auth0Sub: auth0Sub,
-      },
+      where: { auth0Sub: auth0Sub },
+      include: { stats: true } // Check if stats exist
     });
 
-    // 4. [시나리오 1: 이미 있는 유저 (재로그인)]
+    // 4. [Scenario A: Existing User]
     if (user) {
-      console.log('기존 유저 로그인:', user.username);
-      return res.status(200).json({ message: '기존 유저 로그인 성공', user: user });
+      console.log('Existing User Logged In:', user.username);
+      
+      // [OPTIONAL FIX]: If an old user logs in but doesn't have stats/subscription yet, create them now.
+      // This prevents crashes for users created before today's update.
+      if (!user.stats) {
+          await prisma.user.update({
+              where: { id: user.id },
+              data: { 
+                  stats: { create: {} },
+                  subscription: { create: {} }
+              }
+          });
+      }
+      
+      return res.status(200).json({ message: 'Login successful', user: user });
     }
 
-    // 5. [시나리오 2: 새로 가입한 유저]
-    //    DB에 없으면 -> "새 유저"로 생성!
+    // 5. [Scenario B: New User]
+    // Create User AND initialize their Stats + Subscription
     user = await prisma.user.create({
       data: {
-        auth0Sub: auth0Sub,   // Auth0 ID 저장
-        username: username, // Auth0 프로필의 'nickname' 저장
+        auth0Sub: auth0Sub,
+        username: username,
+        email: email,           // [NEW] Save Email
+        avatarUrl: avatarUrl,   // [NEW] Save Profile Picture
+        
+        // [CRITICAL]: Initialize the related tables immediately
+        stats: { 
+            create: {
+                totalSentences: 0,
+                studyStreak: 0
+            } 
+        },
+        subscription: { 
+            create: {
+                planName: 'Free',
+                isActive: true
+            } 
+        }
       },
+      // Return the new user with their stats
+      include: {
+          stats: true,
+          subscription: true
+      }
     });
 
-    console.log('신규 유저 생성:', user.username);
-    res.status(201).json({ message: '신규 유저 생성 성공!', user: user });
+    console.log('New User Created:', user.username);
+    res.status(201).json({ message: 'User registered successfully!', user: user });
 
   } catch (error) {
-    console.error('DB 등록 에러:', error);
-    res.status(500).json({ message: '서버 에러', error: error.message });
+    console.error('Registration Error:', error);
+    res.status(500).json({ message: 'Server Error', error: error.message });
   }
 });
 
-// 이 파일을 다른 곳에서 '수입'할 수 있게 '수출'
 export default router;
