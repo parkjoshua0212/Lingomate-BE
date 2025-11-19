@@ -23,26 +23,26 @@ datasource db {
 // Core models {Tables} for the Conversation app
 //--------------------------------------------------------------------------------
 
-// 1. User Table {Authentication and Profile}
+// 1. User Table
 model User {
   id            Int      @id @default(autoincrement()) @map("user_id")
   auth0Sub      String   @unique @map("auth0_sub") 
   username      String   @db.VarChar(100)
-  email         String?  @unique @db.VarChar(255) // New: For Profile
-  avatarUrl     String?  @map("avatar_url")       // New: For Profile Image
-  languagePref  String?  @default("ko") @map("language_pref") @db.VarChar(10)
+  email         String?  @unique @db.VarChar(255)
+  avatarUrl     String?  @map("avatar_url")
   
-  // Settings (from Design)
-  voiceSetting  String?  @default("Kore") @map("voice_setting") @db.VarChar(50)
-  toneSetting   String?  @default("casual") @map("tone_setting") // 'casual' or 'formal'
+  // --- NEW SETTINGS (Based on your UI Image) ---
+  // Defaults can be changed later
+  countryPref   String   @default("United States") @map("country_pref") // e.g., 'United States', 'United Kingdom', 'Australia'
+  stylePref     String   @default("Casual English") @map("style_pref")   // e.g., 'Formal English', 'Casual English'
+  genderPref    String   @default("Female Tone") @map("gender_pref")     // e.g., 'Female Tone', 'Male Tone'
   
   role          Role     @default(USER)
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamp(0)
   
-  // Relationships
   conversations Conversation[]
-  stats         UserStat?      // New: 1-to-1 relation for Dashboard
-  subscription  Subscription?  // New: 1-to-1 relation for Premium
+  stats         UserStat?
+  subscription  Subscription?
   payments      Payment[]
 
   @@map("User")
@@ -92,54 +92,34 @@ model Payment {
   @@map("Payment")
 }
 
-model Payment {
-  id        Int      @id @default(autoincrement())
-  userId    Int      @map("user_id")
-  amount    Float
-  currency  String   @default("KRW")
-  status    String   // 'PENDING', 'SUCCESS', 'FAILED'
-  createdAt DateTime @default(now())
-
-  user      User     @relation(fields: [userId], references: [id])
-  @@map("Payment")
-}
 
 enum Role {
   USER
   PREMIUM
 }
 
-// 4. Topic (Conversation Scenarios)
-model Topic {
-  id          Int      @id @default(autoincrement()) @map("topic_id")
-  titleJp     String   @map("title_jp") @db.VarChar(255)
-  titleEn     String   @map("title_en") @db.VarChar(255)
-  startPrompt String   @map("start_prompt") @db.Text 
-  category    String?  @db.VarChar(50)
-  imageUrl    String?  @map("image_url") // New: For UI thumbnails
-
-  conversations Conversation[]
-  @@map("Topic")
-}
-
-// 5. Conversation (Tracks a single chat session)
+// 4. Conversation (Updated for Free Talking)
+// We removed 'topicId' and added the specific settings for this session
 model Conversation {
   id           Int       @id @default(autoincrement()) @map("conversation_id")
   userId       Int       @map("user_id")
-  topicId      Int       @map("topic_id")
-  languageUsed String    @map("language_used") @db.VarChar(5)
+  
+  // Snapshot of settings used for this chat
+  countryUsed  String    @map("country_used") // e.g. 'United States'
+  styleUsed    String    @map("style_used")   // e.g. 'Formal'
+  genderUsed   String    @map("gender_used")  // e.g. 'Female'
+
   startedAt    DateTime  @default(now()) @map("started_at") @db.Timestamp(0)
   endedAt      DateTime? @map("ended_at") @db.Timestamp(0)
 
   user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  topic    Topic     @relation(fields: [topicId], references: [id])
   messages Message[]
 
   @@index([userId])
   @@map("Conversation")
 }
 
-// 6. Message (Chat Transcript + AI Feedback)
+// 5. Message (Chat Transcript + AI Feedback)
 model Message {
   id             Int           @id @default(autoincrement()) @map("message_id")
   conversationId Int           @map("conversation_id")

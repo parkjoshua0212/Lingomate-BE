@@ -4,13 +4,8 @@ import WebSocket from 'ws';
 export default (wss) => {
     const controller = {};
 
-    /**
-     * Helper function to broadcast a message to all connected clients
-     * Note: In production, you should filter this to only the relevant userId!
-     */
     const broadcastMessage = (type, payload) => {
         const message = JSON.stringify({ type, payload });
-        
         wss.clients.forEach(function each(client) {
             if (client.readyState === WebSocket.OPEN) {
                 client.send(message);
@@ -18,39 +13,43 @@ export default (wss) => {
         });
     };
 
-    // 1. Create New Conversation
-    // REQ BODY NEEDS: { userId, topicId, languageUsed }
+    // 1. Create New Conversation (FREE TALKING MODE)
+    // REQ BODY NEEDS: { userId } (Topic is gone)
     controller.newConversation = async (req, res) => {
-        // FIXED: Matching your Schema (User + Topic + Language)
-        const { userId, topicId, languageUsed } = req.body;
+        const { userId } = req.body;
 
-        // Basic validation
-        if (!userId || !topicId || !languageUsed) {
-            return res.status(400).json({ error: "userId, topicId, and languageUsed are required." });
+        if (!userId) {
+            return res.status(400).json({ error: "userId is required." });
         }
 
         try {
+            // 1. Fetch User to get their Preferences (Country, Style, Gender)
+            const user = await prisma.user.findUnique({
+                where: { id: parseInt(userId) }
+            });
+
+            if (!user) return res.status(404).json({ error: "User not found" });
+
+            // 2. Create Conversation using User's Preferences
             const savedConv = await prisma.conversation.create({
                 data: {
-                    userId: parseInt(userId),       // Schema relation
-                    topicId: parseInt(topicId),     // Schema relation
-                    languageUsed: languageUsed      // Schema field
+                    userId: parseInt(userId),
+                    // Snapshot the preferences for this specific chat
+                    countryUsed: user.countryPref,
+                    styleUsed: user.stylePref,
+                    genderUsed: user.genderPref
                 },
-                // FIXED: Include related data to display titles immediately
                 include: {
-                    topic: true, 
                     user: {
                         select: { username: true }
                     }
                 }
             });
             
-            // --- WEBSOCKET LOGIC ---
             broadcastMessage('NEW_CONVERSATION', {
-                message: 'A new conversation session started.',
+                message: 'Free talking session started.',
                 conversation: savedConv
             });
-            // -----------------------
 
             res.status(200).json(savedConv);
         } catch (err) {
@@ -60,24 +59,17 @@ export default (wss) => {
     };
 
     // 2. Get User Conversations
-    // URL: /api/conversations/:userId
     controller.getConversations = async (req, res) => {
         const { userId } = req.params;
 
         try {
             const conversations = await prisma.conversation.findMany({
                 where: {
-                    // FIXED: Schema uses a direct relationship, not an array
                     userId: parseInt(userId), 
                 },
-                // Optional: Include the Topic details so the UI can show "At the Coffee Shop"
-                include: {
-                    topic: {
-                        select: { titleEn: true, titleJp: true, category: true }
-                    }
-                },
+                // Topic include removed
                 orderBy: {
-                    startedAt: 'desc' // Show newest first
+                    startedAt: 'desc' 
                 }
             });
             res.status(200).json(conversations);
@@ -87,27 +79,18 @@ export default (wss) => {
         }
     };
 
-    // 3. Delete Conversation
-    // URL: /api/conversations/:conversationId
+    // 3. Delete Conversation (Same as before)
     controller.deleteConversation = async (req, res) => {
         const { conversationId } = req.params;
 
         try {
-            // FIXED: Convert string param to Integer
             const id = parseInt(conversationId);
-
             const deletedConv = await prisma.conversation.delete({
-                where: {
-                    id: id,
-                },
+                where: { id: id },
             });
-            
             res.status(200).json(`Conversation ${id} has been deleted.`);
         } catch (err) {
-            if (err.code === 'P2025') {
-                 return res.status(404).json("Conversation not found!");
-            }
-            console.error("Error deleting conversation:", err);
+            if (err.code === 'P2025') return res.status(404).json("Conversation not found!");
             res.status(500).json({ error: "Failed to delete conversation", details: err.message });
         }
     };

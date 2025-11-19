@@ -16,6 +16,45 @@ const checkJwt = auth({
   audience: auth0Audience,
 });
 
+// --- SWAGGER DOCUMENTATION ---
+
+/**
+ * @swagger
+ * /auth/register-if-needed:
+ *   post:
+ *     summary: Sync Auth0 User to Database
+ *     description: Checks if the logged-in user exists in the DB. If not, creates them with default stats.
+ *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               username:
+ *                 type: string
+ *                 example: "PandaLover"
+ *               email:
+ *                 type: string
+ *                 example: "user@example.com"
+ *               avatarUrl:
+ *                 type: string
+ *                 example: "https://example.com/avatar.png"
+ *     responses:
+ *       200:
+ *         description: User exists and was returned.
+ *       201:
+ *         description: New user created successfully.
+ *       400:
+ *         description: Missing required fields (username/Auth0 ID).
+ *       401:
+ *         description: Unauthorized (Invalid Token).
+ */
+
+
 // --- Login / Register Logic ---
 // POST /auth/register-if-needed
 router.post('/register-if-needed', checkJwt, async (req, res) => {
