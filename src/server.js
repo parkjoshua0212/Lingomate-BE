@@ -1,6 +1,6 @@
 // src/server.js
 //To update EC2 server files with local files, use the following command in the terminal with path set to BackEnd directory:
-// rsync -avz --exclude 'node_modules' --exclude '.git' --exclude '.env' \-e "ssh -i ~/.ssh/LingomateEC2key.pem" \. ubuntu@ec2-16-184-11-218.ap-northeast-2.compute.amazonaws.com:~/app
+// rsync -avz --exclude 'node_modules' --exclude '.git' --exclude '.env' \-e "ssh -i ~/.ssh/LingomateEC2key.pem" \. ubuntu@ec2-52-78-168-255.ap-northeast-2.compute.amazonaws.com:~/app
 
 // 1. .env 파일 로더 (가장 먼저 실행)
 import 'dotenv/config';
