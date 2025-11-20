@@ -15,18 +15,17 @@ import bodyParser from 'body-parser'; // (JSON 파싱용)
 import swaggerUi from 'swagger-ui-express';
 import swaggerJSDoc from 'swagger-jsdoc';
 
-// 3. 모든 라우터 '수입'
+// 3. 모든 라우터 및 서비스 '수입'
 import authRoutes from './routes/auth.routes.js';
 import convRoutes from './routes/convRoutes.js';
+import model from './lib/gemini.js'; // ★★★ Gemini 통역사 수입 ★★★
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // 4. .env 파일에서 Auth0 키 값 불러오기
 const auth0Domain = process.env.AUTH0_DOMAIN;
-const auth0Audience = process.env.AUTH0_AUDIENCE; // (팀원이 AUDIENCE로 썼을 수도 있으니 확인)
-// 만약 AUDIENCE가 안되면 이걸로 다시 바꿔: const auth0Audience = process.env.AUTH0_AUDIENCE;
-
+const auth0Audience = process.env.AUTH0_AUDIENCE; 
 
 if (!auth0Domain || !auth0Audience) {
   throw new Error('AUTH0_DOMAIN 또는 AUTH0_AUDIENCE가 .env 파일에 없습니다!');
@@ -84,16 +83,29 @@ const server = http.createServer(app);
 // (2) WebSocket 서버 생성 및 'http' 서버에 연결
 const wss = new WebSocketServer({ server });
 
-// (3) WebSocket 연결 처리 로직
+// (3) WebSocket 연결 처리 로직 (★ Gemini로 수정됨 ★)
 wss.on('connection', (ws) => {
   console.log('[WebSocket] 클라이언트가 연결되었습니다.');
 
   // 클라이언트로부터 메시지를 받았을 때
-  ws.on('message', (message) => {
-    console.log(`[WebSocket] 메시지 수신: ${message}`);
-    
-    // (테스트용) 일단 받은 메시지를 그대로 다시 보냄 (Echo)
-    ws.send(`서버가 받은 메시지: ${message}`);
+  ws.on('message', async (message) => { // ( 'async' 추가 )
+    try {
+      const userPrompt = message.toString(); // 클라이언트가 보낸 메시지
+      console.log(`[WebSocket] 메시지 수신: ${userPrompt}`);
+      
+      // --- ★ Gemini API 호출 ★ ---
+      const result = await model.generateContent(userPrompt);
+      const response = result.response;
+      const aiText = response.text();
+      // -------------------------
+
+      console.log(`[Gemini] 응답: ${aiText}`);
+      ws.send(aiText); // Gemini의 답변을 클라이언트에 다시 전송
+      
+    } catch (error) {
+      console.error('[Gemini] 에러:', error);
+      ws.send('AI 응답 생성에 실패했습니다.');
+    }
   });
 
   // 클라이언트 연결이 끊겼을 때
@@ -111,7 +123,8 @@ wss.on('connection', (ws) => {
 // --- 9. 통합 서버 실행 ---
 // (app.listen이 아닌 'server.listen'을 사용해야 함)
 server.listen(PORT, () => {
-  console.log(`[V4] HTTP 서버 및 WebSocket 서버가 ${PORT}에서 실행 중입니다!`);
+  // (로그 메시지 V5로 업데이트)
+  console.log(`[V5] HTTP + WebSocket + Gemini 서버가 ${PORT}에서 실행 중입니다!`);
   
   console.log("AUTH0_DOMAIN (for check):", process.env.AUTH0_DOMAIN);
   console.log(`Swagger Docs: http://localhost:${PORT}/api-docs`);

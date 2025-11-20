@@ -21,6 +21,8 @@
   },
   "homepage": "https://github.com/parkjoshua0212/-LingoMate#readme",
   "dependencies": {
+    "@google-cloud/speech": "^7.2.1",
+    "@google/generative-ai": "^0.24.1",
     "@prisma/client": "^6.18.0",
     "bcryptjs": "^3.0.2",
     "dotenv": "^17.2.3",
