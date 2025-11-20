@@ -1,29 +1,27 @@
 // src/server.js
-//To update EC2 server files with local files, use the following command in the terminal with path set to BackEnd directory:
-// rsync -avz --exclude 'node_modules' --exclude '.git' --exclude '.env' \-e "ssh -i ~/.ssh/LingomateEC2key.pem" \. ubuntu@ec2-16-184-11-218.ap-northeast-2.compute.amazonaws.com:~/app
 
-// 1. .env 파일 로더 (가장 먼저 실행)
+// 1. .env 파일 로더
 import 'dotenv/config';
 
-// 2. 모든 라이브러리 '수입'
+// 2. 라이브러리 수입
 import express from 'express';
-import http from 'http'; // (웹소켓용)
-import { WebSocketServer } from 'ws'; // (웹소켓용)
-import { auth } from 'express-oauth2-jwt-bearer'; // (Auth0 경비원)
-import bodyParser from 'body-parser'; // (JSON 파싱용)
-
+import http from 'http'; 
+import { WebSocketServer } from 'ws'; 
+import { auth } from 'express-oauth2-jwt-bearer'; 
+import bodyParser from 'body-parser'; 
 import swaggerUi from 'swagger-ui-express';
 import swaggerJSDoc from 'swagger-jsdoc';
 
-// 3. 모든 라우터 및 서비스 '수입'
+// 3. 라우터 및 서비스 수입 (★ 충돌 해결: 둘 다 남김 ★)
 import authRoutes from './routes/auth.routes.js';
 import convRoutes from './routes/convRoutes.js';
-import model from './lib/gemini.js'; // ★★★ Gemini 통역사 수입 ★★★
+import model from './lib/gemini.js'; // (너의 Gemini)
+import apiRoutes from './routes/apiRoutes.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// 4. .env 파일에서 Auth0 키 값 불러오기
+// 4. Auth0 설정
 const auth0Domain = process.env.AUTH0_DOMAIN;
 const auth0Audience = process.env.AUTH0_AUDIENCE; 
 
@@ -31,24 +29,26 @@ if (!auth0Domain || !auth0Audience) {
   throw new Error('AUTH0_DOMAIN 또는 AUTH0_AUDIENCE가 .env 파일에 없습니다!');
 }
 
-// 5. '경비원( 미들웨어)' 설정하기
+// 5. 경비원 설정
 const checkJwt = auth({
-  issuerBaseURL: `https://${auth0Domain}`, // '출입증' 발급자
-  audience: auth0Audience,               // '출입증' 대상자
+  issuerBaseURL: `https://${auth0Domain}`, 
+  audience: auth0Audience,               
 });
 
-// 6. 서버에 '미들웨어' 등록하기
+// 6. 미들웨어 설정
 app.use(express.json());
 app.use(bodyParser.json());
 
-// 7. REST API 라우터 등록
-app.get("/", (req, res) => res.send("Hello from Docker!")); // Docker 테스트용
-app.use('/auth', authRoutes); // Auth0 로그인/등록 (경비원 없음)
-
-// '/api/conversations' 경로도 '출입증(checkJwt)'이 있어야만 접근하게 수정!
+// 7. 라우터 등록
+app.get("/", (req, res) => res.send("Hello from Docker!")); 
+app.use('/auth', authRoutes); 
 app.use('/api/conversations', checkJwt, convRoutes);
 
-// (팀원이 추가한 Swagger 옵션)
+// (조원이 추가한 apiRoutes도 등록해줘야 함 - 보통 /api 경로를 씀)
+// 만약 조원이 아래쪽에 app.use 코드를 안 짰다면 이 줄이 필요해:
+app.use('/api', apiRoutes); 
+
+// Swagger 설정
 const options = {
   definition: {
     openapi: '3.0.0',
@@ -59,48 +59,40 @@ const options = {
     },
     servers: [{ url: `http://localhost:${PORT}` }],
   },
-  apis: ['./src/routes/*.js'], // routes 폴더의 모든 .js 파일을 읽어서 API 문서를 만듦
+  apis: ['./src/routes/*.js'], 
 };
-
 const specs = swaggerJSDoc(options);
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs)); // Swagger UI 경로
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs)); 
 
-
-// 테스트용: 경비원이 잘 작동하는지 '보호된' 주소
+// 보호된 라우트 테스트
 app.get('/api/protected', checkJwt, (req, res) => {
   res.json({
     message: '축하합니다! "출입증"이 확인됐습니다!',
-    authInfo: req.auth // <-- 여기 유저 정보(sub)가 들어있음
+    authInfo: req.auth 
   });
 });
 
 
-// --- 8. WebSocket 서버 설정 (HTTP 서버에 연결) ---
-
-// (1) Express 앱으로 'http' 서버 생성
+// --- 8. WebSocket 서버 설정 ---
 const server = http.createServer(app);
-
-// (2) WebSocket 서버 생성 및 'http' 서버에 연결
 const wss = new WebSocketServer({ server });
 
-// (3) WebSocket 연결 처리 로직 (★ Gemini로 수정됨 ★)
 wss.on('connection', (ws) => {
   console.log('[WebSocket] 클라이언트가 연결되었습니다.');
 
-  // 클라이언트로부터 메시지를 받았을 때
-  ws.on('message', async (message) => { // ( 'async' 추가 )
+  ws.on('message', async (message) => {
     try {
-      const userPrompt = message.toString(); // 클라이언트가 보낸 메시지
+      const userPrompt = message.toString();
       console.log(`[WebSocket] 메시지 수신: ${userPrompt}`);
       
-      // --- ★ Gemini API 호출 ★ ---
+      // --- Gemini API 호출 ---
       const result = await model.generateContent(userPrompt);
       const response = result.response;
       const aiText = response.text();
-      // -------------------------
+      // ---------------------
 
       console.log(`[Gemini] 응답: ${aiText}`);
-      ws.send(aiText); // Gemini의 답변을 클라이언트에 다시 전송
+      ws.send(aiText); 
       
     } catch (error) {
       console.error('[Gemini] 에러:', error);
@@ -108,24 +100,19 @@ wss.on('connection', (ws) => {
     }
   });
 
-  // 클라이언트 연결이 끊겼을 때
   ws.on('close', () => {
     console.log('[WebSocket] 클라이언트 연결이 끊겼습니다.');
   });
 
-  // 에러 처리
   ws.on('error', (error) => {
     console.error('[WebSocket] 에러 발생:', error);
   });
 });
 
 
-// --- 9. 통합 서버 실행 ---
-// (app.listen이 아닌 'server.listen'을 사용해야 함)
+// --- 9. 서버 실행 ---
 server.listen(PORT, () => {
-  // (로그 메시지 V5로 업데이트)
   console.log(`[V5] HTTP + WebSocket + Gemini 서버가 ${PORT}에서 실행 중입니다!`);
-  
   console.log("AUTH0_DOMAIN (for check):", process.env.AUTH0_DOMAIN);
   console.log(`Swagger Docs: http://localhost:${PORT}/api-docs`);
 });
