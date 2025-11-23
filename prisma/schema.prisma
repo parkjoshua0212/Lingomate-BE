@@ -12,16 +12,12 @@
 
 generator client {
   provider = "prisma-client-js"
-  //output   = "../src/generated/prisma"
 }
 
 datasource db {
-     provider = "mysql"
-     url      = env("DATABASE_URL")
-   }
-
-// Core models {Tables} for the Conversation app
-//--------------------------------------------------------------------------------
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
 
 // 1. User Table
 model User {
@@ -31,11 +27,10 @@ model User {
   email         String?  @unique @db.VarChar(255)
   avatarUrl     String?  @map("avatar_url")
   
-  // --- NEW SETTINGS (Based on your UI Image) ---
-  // Defaults can be changed later
-  countryPref   String   @default("United States") @map("country_pref") // e.g., 'United States', 'United Kingdom', 'Australia'
-  stylePref     String   @default("Casual English") @map("style_pref")   // e.g., 'Formal English', 'Casual English'
-  genderPref    String   @default("Female Tone") @map("gender_pref")     // e.g., 'Female Tone', 'Male Tone'
+  // Settings (v2.1 defaults)
+  countryPref   String   @default("us") @map("country_pref") 
+  stylePref     String   @default("casual") @map("style_pref")   
+  genderPref    String   @default("female") @map("gender_pref")     
   
   role          Role     @default(USER)
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamp(0)
@@ -48,7 +43,7 @@ model User {
   @@map("User")
 }
 
-// 2. User Statistics (New: For Dashboard/MyPage)
+// 2. User Statistics
 model UserStat {
   id             Int       @id @default(autoincrement())
   userId         Int       @unique @map("user_id")
@@ -61,11 +56,11 @@ model UserStat {
   @@map("UserStat")
 }
 
-// 3. Subscription & Payments
+// 3. Subscription
 model Subscription {
   id        Int       @id @default(autoincrement())
   userId    Int       @unique @map("user_id")
-  planName  String    @default("Free") // 'Free', 'Premium'
+  planName  String    @default("free")
   isActive  Boolean   @default(true)
   expiresAt DateTime? @map("expires_at")
 
@@ -73,44 +68,42 @@ model Subscription {
   @@map("Subscription")
 }
 
+// Payment History
 model Payment {
   id            Int      @id @default(autoincrement())
   userId        Int      @map("user_id")
   amount        Float
   currency      String   @default("KRW")
-  status        String   // 'PENDING', 'SUCCESS', 'FAILED'
-  platform      String   @default("GOOGLE_PLAY") // 'KAKAO', 'GOOGLE_PLAY'
-  
-  // [NEW] Google Play Fields
-  purchaseToken String?  @db.Text // Google tokens are very long
+  status        String
+  platform      String   @default("GOOGLE_PLAY")
+  purchaseToken String?  @db.Text
   orderId       String?  @db.VarChar(255)
-  productId     String?  @db.VarChar(100) // e.g., 'com.lingomate.premium_monthly'
-
+  productId     String?  @db.VarChar(100)
   createdAt     DateTime @default(now())
 
   user          User     @relation(fields: [userId], references: [id])
   @@map("Payment")
 }
 
-
 enum Role {
   USER
   PREMIUM
 }
 
-// 4. Conversation (Updated for Free Talking)
-// We removed 'topicId' and added the specific settings for this session
+// 4. Conversation (v2.1 Updated)
 model Conversation {
   id           Int       @id @default(autoincrement()) @map("conversation_id")
   userId       Int       @map("user_id")
   
-  // Snapshot of settings used for this chat
-  countryUsed  String    @map("country_used") // e.g. 'United States'
-  styleUsed    String    @map("style_used")   // e.g. 'Formal'
-  genderUsed   String    @map("gender_used")  // e.g. 'Female'
+  // Snapshot settings used for this specific chat
+  countryUsed  String    @map("country_used") 
+  styleUsed    String    @map("style_used")   
+  genderUsed   String    @map("gender_used")  
 
   startedAt    DateTime  @default(now()) @map("started_at") @db.Timestamp(0)
-  endedAt      DateTime? @map("ended_at") @db.Timestamp(0)
+  
+  // [NEW v2.1] Tracks when the chat was finished/uploaded
+  finishedAt   DateTime? @map("finished_at") @db.Timestamp(0)
 
   user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages Message[]
@@ -119,18 +112,19 @@ model Conversation {
   @@map("Conversation")
 }
 
-// 5. Message (Chat Transcript + AI Feedback)
+// 5. Message (Script)
 model Message {
   id             Int           @id @default(autoincrement()) @map("message_id")
   conversationId Int           @map("conversation_id")
-  sender         MessageSender @default(USER)
+  sender         MessageSender @default(USER) // 'user' or 'ai'
   content        String        @db.Text
-  timestamp      DateTime      @default(now()) @db.Timestamp(0)
+  
+  createdAt      DateTime      @default(now()) @db.Timestamp(0)
 
-  // AI Feedback Fields (New: For "Review" screen)
-  correction     String?       @db.Text // The corrected sentence from AI
-  explanation    String?       @db.Text // Grammar explanation
-  isBookmarked   Boolean       @default(false) // If user wants to save this expression
+  // Optional fields for future features (bookmarking, corrections)
+  correction     String?       @db.Text
+  explanation    String?       @db.Text
+  isBookmarked   Boolean       @default(false)
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
