@@ -1,111 +1,141 @@
 import prisma from '../lib/prisma.js';
 
-export default (wss) => {
+export default () => {
     const controller = {};
 
-    // 1. Get User Profile (GET /api/users/me)
-    controller.getMyProfile = async (req, res) => {
-        // Use optional chaining in case auth is missing for some reason
-        const auth0Sub = req.auth?.payload?.sub; 
-
-        if (!auth0Sub) {
-            return res.status(401).json({ error: "User ID missing from token." });
-        }
-
-        try {
-            const user = await prisma.user.findUnique({
-                where: { auth0Sub: auth0Sub },
-                include: {
-                    stats: true,       
-                    subscription: true 
-                }
-            });
-
-            if (!user) return res.status(404).json({ error: "User not found." });
-            res.status(200).json(user);
-        } catch (err) {
-            console.error(err);
-            res.status(500).json({ error: "Server Error" });
-        }
+    // Helper: Find user by Auth0 ID and include necessary relations
+    const getUser = async (auth0Sub) => {
+        return await prisma.user.findUnique({
+            where: { auth0Sub },
+            include: { subscription: true, stats: true }
+        });
     };
 
-    // 2. Get Dashboard Data (GET /api/dashboard)
-    // UPDATED: Removed 'Topic' dependency
-    controller.getDashboard = async (req, res) => {
+    // --- 1. USER PROFILE ---
+
+    // 1.2 Get Profile
+    // GET /api/user/profile
+    controller.getProfile = async (req, res) => {
         const auth0Sub = req.auth?.payload?.sub;
 
-        if (!auth0Sub) {
-            return res.status(401).json({ error: "User ID missing from token." });
-        }
-
         try {
-            const user = await prisma.user.findUnique({
-                where: { auth0Sub: auth0Sub },
-                include: {
-                    stats: true,
-                    subscription: true
-                }
-            });
+            const user = await getUser(auth0Sub);
+            
+            if (!user) {
+                return res.status(404).json({ success: false, message: "User not found. Please sync via /auth/register-if-needed first." });
+            }
 
-            if (!user) return res.status(404).json({ error: "User not found." });
-
-            // Fetch 3 most recent conversations
-            // We REMOVED 'include: { topic: ... }' because the table is gone.
-            const recentConversations = await prisma.conversation.findMany({
-                where: { userId: user.id },
-                take: 3, 
-                orderBy: { startedAt: 'desc' },
-                // Optional: You can include the first message if you want to show a preview
-                // include: { messages: { take: 1 } } 
-            });
-
-            const dashboardData = {
-                user: {
-                    username: user.username,
+            res.json({
+                success: true,
+                data: {
+                    userId: user.id,
+                    email: user.email,
+                    name: user.username,
                     avatarUrl: user.avatarUrl,
-                    plan: user.subscription?.planName || "Free",
-                    // Return the user's current default settings for the UI
-                    preferences: {
-                        country: user.countryPref,
-                        style: user.stylePref,
-                        gender: user.genderPref
-                    }
-                },
-                stats: user.stats, 
-                recentActivity: recentConversations 
-            };
-
-            res.status(200).json(dashboardData);
-
+                    subscription: user.subscription?.planName || 'free',
+                    // Conversation Preferences
+                    country: user.countryPref,
+                    style: user.stylePref,
+                    gender: user.genderPref,
+                    // Statistics
+                    streak: user.stats?.studyStreak || 0
+                }
+            });
         } catch (err) {
-            console.error("Dashboard Error:", err);
-            res.status(500).json({ error: "Failed to load dashboard" });
+            console.error("Get Profile Error:", err);
+            res.status(500).json({ success: false, message: "Server Error" });
         }
     };
 
-    // 3. Update Settings (PUT /api/users/me/settings)
-    // UPDATED: Handles Country, Style, Gender
-    controller.updateSettings = async (req, res) => {
+    // 1.3 Update Profile
+    // PUT /api/user/profile
+    controller.updateProfile = async (req, res) => {
         const auth0Sub = req.auth?.payload?.sub;
-        
-        // These match the 3 dropdowns in your design
-        const { country, style, gender, nickname } = req.body; 
+        // v2.0 Spec allows updating profile info AND settings here
+        const { name, avatarUrl, country, style, gender } = req.body;
 
         try {
             const updatedUser = await prisma.user.update({
-                where: { auth0Sub: auth0Sub },
+                where: { auth0Sub },
                 data: {
-                    // Only update fields if they are provided in the request
+                    // Only update fields if they are provided in the request body
+                    ...(name && { username: name }),
+                    ...(avatarUrl && { avatarUrl: avatarUrl }),
                     ...(country && { countryPref: country }),
                     ...(style && { stylePref: style }),
                     ...(gender && { genderPref: gender }),
-                    ...(nickname && { username: nickname })
                 }
             });
-            res.status(200).json(updatedUser);
+
+            res.json({
+                success: true,
+                data: {
+                    userId: updatedUser.id,
+                    name: updatedUser.username,
+                    avatarUrl: updatedUser.avatarUrl,
+                    country: updatedUser.countryPref,
+                    style: updatedUser.stylePref,
+                    gender: updatedUser.genderPref
+                }
+            });
         } catch (err) {
-            console.error(err);
-            res.status(500).json({ error: "Failed to update settings" });
+            console.error("Update Profile Error:", err);
+            res.status(500).json({ success: false, message: "Update failed" });
+        }
+    };
+
+    // --- 5. CONVERSATION SETTINGS ---
+
+    // 5.1 Get Settings
+    // GET /api/conversation/settings
+    controller.getSettings = async (req, res) => {
+        const auth0Sub = req.auth?.payload?.sub;
+
+        try {
+            const user = await prisma.user.findUnique({ where: { auth0Sub } });
+            
+            if (!user) return res.status(404).json({ success: false, message: "User not found" });
+
+            res.json({
+                success: true,
+                data: {
+                    country: user.countryPref,
+                    style: user.stylePref,
+                    gender: user.genderPref
+                }
+            });
+        } catch (err) {
+            res.status(500).json({ success: false, message: "Server Error" });
+        }
+    };
+
+    // 5.2 Update Settings
+    // PUT /api/conversation/settings
+    // (Reuses the logic from updateProfile, but specific to these 3 fields)
+    controller.updateSettings = async (req, res) => {
+        const auth0Sub = req.auth?.payload?.sub;
+        const { country, style, gender } = req.body;
+
+        try {
+            const updatedUser = await prisma.user.update({
+                where: { auth0Sub },
+                data: {
+                    ...(country && { countryPref: country }),
+                    ...(style && { stylePref: style }),
+                    ...(gender && { genderPref: gender }),
+                }
+            });
+
+            res.json({
+                success: true,
+                data: {
+                    country: updatedUser.countryPref,
+                    style: updatedUser.stylePref,
+                    gender: updatedUser.genderPref
+                }
+            });
+        } catch (err) {
+            res.status(500).json({ success: false, message: "Update settings failed" });
         }
     };
 
