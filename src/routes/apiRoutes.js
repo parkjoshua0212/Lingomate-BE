@@ -327,6 +327,31 @@ router.post('/ai/chat', ai.chat);
  *       200:
  *         description: Audio file returned (base64)
  */
+
+router.post('/ai/stt', ai.stt); // [NEW]
+
+/**
+ * @swagger
+ * /api/ai/chat:
+ *   post:
+ *     summary: AI chat (stateless)
+ *     tags: [AI]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               message:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: AI response returned
+ */
+
 router.post('/ai/tts', ai.tts);
 
 /**

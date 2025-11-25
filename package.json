@@ -22,6 +22,7 @@
   "homepage": "https://github.com/parkjoshua0212/-LingoMate#readme",
   "dependencies": {
     "@google-cloud/speech": "^7.2.1",
+    "@google-cloud/text-to-speech": "^6.4.0",
     "@google/generative-ai": "^0.24.1",
     "@prisma/client": "^6.18.0",
     "axios": "^1.13.2",
