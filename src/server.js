@@ -10,6 +10,9 @@ import swaggerJSDoc from 'swagger-jsdoc';
 
 // Import only the unified API router
 import apiRoutes from './routes/apiRoutes.js';
+import model from './lib/gemini.js'; // (Gemini AI)
+import { transcribeAudio } from './lib/googleSpeech.js'; // (STT)
+import { synthesizeSpeech } from './lib/googleTTS.js'; // ★ (NEW) TTS 통역사 추가 ★
 
 const app = express();
 const PORT = process.env.PORT || 3000;
