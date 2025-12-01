@@ -90,7 +90,7 @@ enum Role {
   PREMIUM
 }
 
-// 4. Conversation (v2.1 Updated)
+// 4. Conversation (Consolidated & Updated for v2.1)
 model Conversation {
   id           Int       @id @default(autoincrement()) @map("conversation_id")
   userId       Int       @map("user_id")

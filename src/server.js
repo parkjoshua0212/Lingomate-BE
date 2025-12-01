@@ -1,98 +1,178 @@
 // src/server.js
-import 'dotenv/config';
-import express from 'express';
-import http from 'http'; 
-import { WebSocketServer } from 'ws'; 
-import { auth } from 'express-oauth2-jwt-bearer'; 
-import cors from 'cors'; 
-import swaggerUi from 'swagger-ui-express';
-import swaggerJSDoc from 'swagger-jsdoc';
+import dns from "node:dns";
+dns.setDefaultResultOrder("ipv4first");
 
-// Import only the unified API router
-import apiRoutes from './routes/apiRoutes.js';
-import model from './lib/gemini.js'; // (Gemini AI)
-import { transcribeAudio } from './lib/googleSpeech.js'; // (STT)
-import { synthesizeSpeech } from './lib/googleTTS.js'; // ★ (NEW) TTS 통역사 추가 ★
+import "dotenv/config";
+import express from "express";
+import cors from "cors";
+import http from "http";
+import { WebSocketServer } from "ws";
+import swaggerUi from "swagger-ui-express";
+import swaggerJSDoc from "swagger-jsdoc";
+import { auth as jwtAuth } from "express-oauth2-jwt-bearer";
+import jwt from "jsonwebtoken";
+import jwksClient from "jwks-rsa";
+
+import apiRoutes from "./routes/apiRoutes.js";
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8080;
 
-// 1. Auth0 Configuration
-const auth0Domain = process.env.AUTH0_DOMAIN;
-const auth0Audience = process.env.AUTH0_AUDIENCE; 
+// -------------------------------------------------------------
+// 1. ENVIRONMENT CHECKS
+// -------------------------------------------------------------
+const AUTH0_DOMAIN = process.env.AUTH0_DOMAIN;
+const AUTH0_ISSUER = process.env.AUTH0_ISSUER_BASE_URL; // must end with `/`
+const AUTH0_AUDIENCE = process.env.AUTH0_AUDIENCE;
 
-if (!auth0Domain || !auth0Audience) {
-  throw new Error('AUTH0_DOMAIN or AUTH0_AUDIENCE is missing in .env file!');
+if (!AUTH0_DOMAIN || !AUTH0_ISSUER || !AUTH0_AUDIENCE) {
+  console.error("[FATAL] Missing required Auth0 environment variables.");
+  console.error("Check .env file for AUTH0_DOMAIN, AUTH0_ISSUER_BASE_URL, AUTH0_AUDIENCE");
+  process.exit(1);
 }
 
-// 2. Middleware Setup
-app.use(cors({
-    origin: '*', // Allow Vercel/Localhost/Mobile App to connect
-    credentials: true
-}));
-app.use(express.json()); 
+// -------------------------------------------------------------
+// 2. EXPRESS MIDDLEWARE
+// -------------------------------------------------------------
+app.use(cors({ origin: "*", credentials: true }));
+app.use(express.json());
 
-// 3. Auth0 Guard (Security)
-const checkJwt = auth({
-  issuerBaseURL: `https://${auth0Domain}`,
-  audience: auth0Audience,
+// PROTECTED ROUTE MIDDLEWARE (not applied globally)
+const checkJwt = jwtAuth({
+  issuerBaseURL: AUTH0_ISSUER,     // ex: https://dev-xxx.us.auth0.com/
+  audience: AUTH0_AUDIENCE,        // ex: https://api.lingomate.com
+  tokenSigningAlg: "RS256",
 });
 
-// 4. Swagger Documentation Setup
-const options = {
+// -------------------------------------------------------------
+// 3. JWKS CLIENT FOR WEBSOCKETS
+// -------------------------------------------------------------
+const jwks = jwksClient({
+  jwksUri: `${AUTH0_ISSUER}.well-known/jwks.json`,
+});
+
+function getKey(header, callback) {
+  jwks.getSigningKey(header.kid, (err, key) => {
+    if (err) return callback(err);
+    const signingKey = key.publicKey || key.rsaPublicKey;
+    callback(null, signingKey);
+  });
+}
+
+// -------------------------------------------------------------
+// 4. SWAGGER DOCUMENTATION
+// -------------------------------------------------------------
+const swaggerSpec = swaggerJSDoc({
   definition: {
-    openapi: '3.0.0',
-    info: { 
-        title: 'LingoMate API v2.1', 
-        version: '2.1.0',
-        description: 'Backend API Documentation for LingoMate App' 
+    openapi: "3.0.0",
+    info: {
+      title: "LingoMate API v2.1",
+      version: "2.1.0",
+      description: "Backend API Documentation for LingoMate App",
     },
     servers: [{ url: `http://localhost:${PORT}` }],
     components: {
       securitySchemes: {
-        bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
+        bearerAuth: {
+          type: "http",
+          scheme: "bearer",
+          bearerFormat: "JWT",
+        },
       },
     },
     security: [{ bearerAuth: [] }],
   },
-  apis: ['./src/routes/*.js'], // Look for swagger comments in routes folder
-};
-const specs = swaggerJSDoc(options);
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs));
-
-// --- 5. Routes Setup ---
-
-// Public Health Check
-app.get("/", (req, res) => res.send("LingoMate Backend v2.1 is Running!"));
-
-// --- 6. WebSocket & Server Initialization ---
-const server = http.createServer(app);
-const wss = new WebSocketServer({ server });
-
-wss.on('connection', (ws) => {
-  console.log('[WebSocket] Client connected.');
-  
-  ws.on('message', (message) => {
-      // Basic echo or log for debugging
-      // Real-time AI logic is handled via REST API endpoints in v2.1, 
-      // but this WS connection is kept open for future streaming needs.
-      console.log(`[WS] Received: ${message}`);
-  });
-
-  ws.on('error', (err) => console.error('[WS] Error:', err));
+  apis: ["./src/routes/*.js"],
 });
 
-// --- 7. Mount Protected API Routes ---
-// This ONE line activates all your new v2.1 controllers:
-// - /api/auth/register-if-needed
-// - /api/user/profile
-// - /api/conversation/start, finish, history
-// - /api/ai/chat, tts, feedback
-// - /api/subscription/subscribe
-// - /api/stats
-app.use('/api', checkJwt, apiRoutes(wss));
+app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
-// --- 8. Start Server ---
+// -------------------------------------------------------------
+// 5. PUBLIC ROUTE
+// -------------------------------------------------------------
+app.get("/", (req, res) =>
+  res.send("LingoMate Backend v2.1 is Running!")
+);
+
+// -------------------------------------------------------------
+// 6. HTTP + WEBSOCKET SERVER SETUP
+// -------------------------------------------------------------
+const server = http.createServer(app);
+
+// WebSocket server (no direct listening)
+const wss = new WebSocketServer({ noServer: true });
+
+// Upgrade handler for WebSocket authentication
+server.on("upgrade", (req, socket, head) => {
+  try {
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const token = url.searchParams.get("token");
+
+    if (!token) {
+      socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+      socket.destroy();
+      return;
+    }
+
+    jwt.verify(
+      token,
+      getKey,
+      {
+        algorithms: ["RS256"],
+        audience: AUTH0_AUDIENCE,
+        issuer: AUTH0_ISSUER,
+      },
+      (err, decoded) => {
+        if (err) {
+          console.log("[WS] Invalid token:", err.message);
+          socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+          socket.destroy();
+          return;
+        }
+
+        wss.handleUpgrade(req, socket, head, (ws) => {
+          ws.user = decoded;
+          wss.emit("connection", ws, req);
+        });
+      }
+    );
+  } catch (e) {
+    console.error("[WS Upgrade Error]", e);
+    socket.destroy();
+  }
+});
+
+// WebSocket behavior
+wss.on("connection", (ws) => {
+  console.log(`[WebSocket] Connected → User: ${ws.user?.sub}`);
+
+  ws.isAlive = true;
+  ws.on("pong", () => (ws.isAlive = true));
+
+  ws.on("message", (msg) => {
+    console.log(`[WS Message]`, msg.toString());
+  });
+
+  ws.on("close", () => console.log("[WS] Client disconnected"));
+});
+
+// Heartbeat
+setInterval(() => {
+  wss.clients.forEach((ws) => {
+    if (!ws.isAlive) return ws.terminate();
+    ws.isAlive = false;
+    ws.ping();
+  });
+}, 30000);
+
+// -------------------------------------------------------------
+// 7. ROUTES (apiRoutes applies checkJwt internally)
+// -------------------------------------------------------------
+app.use("/api", apiRoutes(checkJwt, wss));
+
+// -------------------------------------------------------------
+// 8. START SERVER
+// -------------------------------------------------------------
 server.listen(PORT, () => {
   console.log(`[SERVER] Running on port ${PORT}`);
   console.log(`[DOCS] http://localhost:${PORT}/api-docs`);
