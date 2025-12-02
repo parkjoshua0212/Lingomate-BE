@@ -105,6 +105,9 @@ model Conversation {
   // [NEW v2.1] Tracks when the chat was finished/uploaded
   finishedAt   DateTime? @map("finished_at") @db.Timestamp(0)
 
+  // [NEW] for S3
+  fullScript   String?   @db.LongText @map("full_script")
+
   user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages Message[]
 

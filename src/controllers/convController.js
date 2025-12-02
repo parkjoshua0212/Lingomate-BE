@@ -124,6 +124,12 @@ export default (wss) => {
             await prisma.conversation.update({
                 where: { id },
                 data: { finishedAt: new Date() },
+                data: { 
+                    finishedAt: new Date(),
+                    fullScript: script
+                        .map(m => `${m.from}: ${m.text}`)
+                        .join("\n")
+                }
             });
 
             const messagesData = script.map((msg) => ({
