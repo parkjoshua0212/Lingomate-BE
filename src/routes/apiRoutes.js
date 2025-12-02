@@ -134,6 +134,72 @@ export default (wss) => {
    */
   router.delete('/conversation/delete', checkJwt, conv.deleteSession);
 
+  /**
+ * @swagger
+ * /api/conversation/reset:
+ *   post:
+ *     tags: [Conversation]
+ *     security:
+ *       - bearerAuth: []
+ *     summary: Reset user's AI conversation state (history, topic, accuracy)
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               userId:
+ *                 type: string
+ *                 example: "u_123"
+ *                 description: Optional. Defaults to "anonymous".
+ *     responses:
+ *       200:
+ *         description: Conversation reset successful
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               data:
+ *                 userId: "u_123"
+ */
+router.post('/conversation/reset', checkJwt, conv.reset);
+
+
+/**
+ * @swagger
+ * /api/conversation/history:
+ *   get:
+ *     tags: [Conversation]
+ *     security:
+ *       - bearerAuth: []
+ *     summary: Get full AI conversation history for a specific user
+ *     parameters:
+ *       - in: query
+ *         name: userId
+ *         schema:
+ *           type: string
+ *         required: false
+ *         description: If omitted, defaults to "anonymous".
+ *         example: "u_123"
+ *     responses:
+ *       200:
+ *         description: Returns full CHAT_HISTORY stored in AI microservice
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               data:
+ *                 userId: "u_123"
+ *                 history:
+ *                   - user: "I very like play soccer."
+ *                     corrected_en: "I really like playing soccer."
+ *                     feedback: "like 뒤에는 동명사 ~ing 형태를 쓰는 것이 자연스럽습니다..."
+ *                     reply_en: "Nice! How often do you play soccer?"
+ */
+router.get('/conversation/history', checkJwt, conv.getHistory);
+
+
   // === SUBSCRIPTION ROUTES ===
 
   /**
@@ -170,84 +236,81 @@ export default (wss) => {
   // === AI ROUTES ===
 
   /**
-   * @swagger
-   * /api/ai/stt:
-   *   post:
-   *     tags: [AI]
-   *     security:
-   *       - bearerAuth: []
-   *     summary: Speech to text
-   */
-  router.post('/ai/stt', checkJwt, ai.stt);
+ * @swagger
+ * /api/ai/stt:
+ *   post:
+ *     tags: [AI]
+ *     security:
+ *       - bearerAuth: []
+ *     summary: Speech to text (audio → text)
+ */
+router.post('/ai/stt', checkJwt, ai.stt);
 
-  /**
-   * @swagger
-   * /api/ai/chat:
-   *   post:
-   *     tags: [AI]
-   *     security:
-   *       - bearerAuth: []
-   *     summary: Text chat with AI
-   */
-  router.post('/ai/chat', checkJwt, ai.chat);
+/**
+ * @swagger
+ * /api/ai/chat:
+ *   post:
+ *     tags: [AI]
+ *     security:
+ *       - bearerAuth: []
+ *     summary: Main AI conversation endpoint (English correction + feedback + reply)
+ */
+router.post('/ai/chat', checkJwt, ai.chat);
 
-  /**
-   * @swagger
-   * /api/ai/tts:
-   *   post:
-   *     tags: [AI]
-   *     security:
-   *       - bearerAuth: []
-   *     summary: Text to speech
-   */
-  router.post('/ai/tts', checkJwt, ai.tts);
+/**
+ * @swagger
+ * /api/ai/feedback:
+ *   post:
+ *     tags: [AI]
+ *     security:
+ *       - bearerAuth: []
+ *     summary: Sentence-level correction & explanation (without affecting stats)
+ */
+router.post('/ai/feedback', checkJwt, ai.feedback);
 
-  /**
-   * @swagger
-   * /api/ai/feedback:
-   *   post:
-   *     tags: [AI]
-   *     security:
-   *       - bearerAuth: []
-   *     summary: Get meaning + examples feedback
-   */
-  router.post('/ai/feedback', checkJwt, ai.feedback);
+/**
+ * @swagger
+ * /api/ai/tts:
+ *   post:
+ *     tags: [AI]
+ *     security:
+ *       - bearerAuth: []
+ *     summary: Convert text to speech (WAV base64)
+ */
+router.post('/ai/tts', checkJwt, ai.tts);
 
-  /**
-   * @swagger
-   * /api/ai/correct:
-   *   post:
-   *     tags: [AI]
-   *     security:
-   *       - bearerAuth: []
-   *     summary: Grammar correction
-   */
-  router.post('/ai/correct', checkJwt, ai.correct);
+/**
+ * @swagger
+ * /api/ai/example-reply:
+ *   post:
+ *     tags: [AI]
+ *     security:
+ *       - bearerAuth: []
+ *     summary: Generate a learner’s example reply based on AI message + user history
+ */
+router.post('/ai/example-reply', checkJwt, ai.exampleReply);
 
-  if (ai.explain) {
-    /**
-     * @swagger
-     * /api/ai/explain:
-     *   post:
-     *     tags: [AI]
-     *     security:
-     *       - bearerAuth: []
-     *     summary: Explain a phrase in detail
-     */
-    router.post('/ai/explain', checkJwt, ai.explain);
-  }
+/**
+ * @swagger
+ * /api/ai/dictionary:
+ *   post:
+ *     tags: [AI]
+ *     security:
+ *       - bearerAuth: []
+ *     summary: Explain an English word/phrase with Korean meaning + usage examples
+ */
+router.post('/ai/dictionary', checkJwt, ai.dictionary);
 
   // === PHRASES ROUTE ===
 
-  /**
-   * @swagger
-   * /api/phrases:
-   *   get:
-   *     tags: [Phrases]
-   *     summary: Get default phrases for memorization
-   */
-  router.get('/phrases', ai.getPhrases);
-
+/**
+ * @swagger
+ * /api/phrases:
+ *   get:
+ *     tags: [Phrases]
+ *     summary: Get default memorization phrases
+ */
+router.get('/phrases', ai.getPhrases);
   // === CONVERSATION SETTINGS ROUTES ===
 
   /**
