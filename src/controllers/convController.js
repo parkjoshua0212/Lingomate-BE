@@ -7,15 +7,9 @@ const AI_URL = process.env.AI_SERVICE_URL || "http://localhost:8000";
 export default (wss) => {
     const controller = {};
 
-    /**
-     * 1. 대화 리셋
-     * POST /api/conversation/reset
-     * Body: { userId?: string }
-     *
-     * 역할:
-     *  - 해당 userId의 CHAT_HISTORY, CURRENT_TOPIC, ACCURACY 초기화
-     *  - 새로운 대화 세션 시작
-     */
+    // ============================================================
+    // 1) AI MICRO-SERVICE: RESET CHAT HISTORY
+    // ============================================================
     controller.reset = async (req, res) => {
         const { userId } = req.body;
 
@@ -33,13 +27,9 @@ export default (wss) => {
         }
     };
 
-    /**
-     * 9. 전체 대화 히스토리 조회
-     * GET /api/conversation/history?userId=u_123
-     *
-     * NOTE: This now retrieves CHAT_HISTORY from the AI microservice,
-     * NOT Prisma conversation sessions.
-     */
+    // ============================================================
+    // 2) AI MICRO-SERVICE: GET FULL CHAT HISTORY
+    // ============================================================
     controller.getHistory = async (req, res) => {
         const userId = req.query.userId || "anonymous";
 
@@ -63,21 +53,26 @@ export default (wss) => {
         }
     };
 
-    // -----------------------------------------
-    // Below: KEEP your existing Prisma-based conversation logic
-    // for sessions used in Speak Mode (voice conversation).
-    // -----------------------------------------
+    // ============================================================
+    // BELOW: PRISMA SPEAK-MODE SESSION LOGIC (VOICE MODE)
+    // ============================================================
 
-    // 2.1 Start Session — POST /api/conversation/start
+    // ============================================================
+    // 3) Start Conversation Session (Speak Mode)
+    // ============================================================
     controller.startSession = async (req, res) => {
         const auth0Sub = req.auth?.payload?.sub;
 
         try {
-            const user = await prisma.user.findUnique({ where: { auth0Sub } });
-            if (!user)
+            const user = await prisma.user.findUnique({
+                where: { auth0Sub },
+            });
+
+            if (!user) {
                 return res
                     .status(404)
                     .json(errorResponse("USER_404", "User not found", 404));
+            }
 
             const conversation = await prisma.conversation.create({
                 data: {
@@ -95,43 +90,39 @@ export default (wss) => {
                 })
             );
         } catch (err) {
-            console.error(err);
+            console.error("START SESSION ERROR:", err);
             return res
                 .status(500)
                 .json(errorResponse("SERVER_ERR", err.message));
         }
     };
 
-    // 2.2 Finish Session + Upload Script
+    // ============================================================
+    // 4) Finish Session + Save Messages
+    // ============================================================
     controller.finishSession = async (req, res) => {
         const { sessionId, script } = req.body;
 
         if (!sessionId || !Array.isArray(script)) {
-            return res
-                .status(400)
-                .json(
-                    errorResponse(
-                        "BAD_REQ",
-                        "Missing sessionId or script array",
-                        400
-                    )
-                );
+            return res.status(400).json(
+                errorResponse(
+                    "BAD_REQ",
+                    "Missing sessionId or script array",
+                    400
+                )
+            );
         }
 
         try {
             const id = parseInt(sessionId);
 
+            // Mark session as finished
             await prisma.conversation.update({
                 where: { id },
                 data: { finishedAt: new Date() },
-                data: { 
-                    finishedAt: new Date(),
-                    fullScript: script
-                        .map(m => `${m.from}: ${m.text}`)
-                        .join("\n")
-                }
             });
 
+            // Save messages individually
             const messagesData = script.map((msg) => ({
                 conversationId: id,
                 sender: msg.from.toLowerCase() === "ai" ? "AI" : "USER",
@@ -151,7 +142,7 @@ export default (wss) => {
                 })
             );
         } catch (err) {
-            console.error(err);
+            console.error("FINISH SESSION ERROR:", err);
             return res
                 .status(500)
                 .json(
@@ -160,9 +151,12 @@ export default (wss) => {
         }
     };
 
-    // 2.4 Get Specific Speak-Session
+    // ============================================================
+    // 5) Get a Speak-Mode Session
+    // ============================================================
     controller.getSession = async (req, res) => {
         const { sessionId } = req.params;
+
         try {
             const conv = await prisma.conversation.findUnique({
                 where: { id: parseInt(sessionId) },
@@ -171,12 +165,13 @@ export default (wss) => {
                 },
             });
 
-            if (!conv)
+            if (!conv) {
                 return res
                     .status(404)
                     .json(
                         errorResponse("NOT_FOUND", "Conversation not found", 404)
                     );
+            }
 
             return res.json(
                 successResponse({
@@ -188,25 +183,36 @@ export default (wss) => {
                 })
             );
         } catch (err) {
-            console.error(err);
+            console.error("GET SESSION ERROR:", err);
             return res
                 .status(500)
                 .json(errorResponse("SERVER_ERR", err.message));
         }
     };
 
-    // 2.5 Delete Speak-Session
+    // ============================================================
+    // 6) Delete Speak-Mode Session(s)
+    // ============================================================
     controller.deleteSession = async (req, res) => {
         const { sessionId, all } = req.body;
         const auth0Sub = req.auth?.payload?.sub;
 
         try {
-            const user = await prisma.user.findUnique({ where: { auth0Sub } });
+            const user = await prisma.user.findUnique({
+                where: { auth0Sub },
+            });
+
+            if (!user) {
+                return res
+                    .status(404)
+                    .json(errorResponse("USER_404", "User not found", 404));
+            }
 
             if (all) {
                 await prisma.conversation.deleteMany({
                     where: { userId: user.id },
                 });
+
                 return res.json(
                     successResponse(null, "All conversations deleted")
                 );
@@ -216,9 +222,8 @@ export default (wss) => {
                 await prisma.conversation.delete({
                     where: { id: parseInt(sessionId) },
                 });
-                return res.json(
-                    successResponse(null, "Conversation deleted")
-                );
+
+                return res.json(successResponse(null, "Conversation deleted"));
             }
 
             return res
@@ -231,7 +236,7 @@ export default (wss) => {
                     )
                 );
         } catch (err) {
-            console.error(err);
+            console.error("DELETE SESSION ERROR:", err);
             return res
                 .status(500)
                 .json(errorResponse("SERVER_ERR", "Delete failed"));

@@ -10,17 +10,13 @@ import statsController from '../controllers/statsController.js';
 
 const router = express.Router();
 
-// Use env so dev/prod can change without code edits
-const auth0Audience = process.env.AUTH0_AUDIENCE || 'https://api.lingomate.com';
-const auth0Domain = process.env.AUTH0_DOMAIN || 'dev-rc5gsyjk5pfptk72.us.auth0.com';
-
 const checkJwt = checkJwtMiddleware({
-  audience: process.env.AUTH0_AUDIENCE, 
+  audience: process.env.AUTH0_AUDIENCE,
   issuerBaseURL: `https://${process.env.AUTH0_DOMAIN}/`,
   tokenSigningAlg: "RS256",
 });
 
-// Export factory so we can inject wss from server.js
+// Inject WebSocket
 export default (wss) => {
   const auth = authController();
   const user = userController();
@@ -29,7 +25,9 @@ export default (wss) => {
   const sub = subscriptionController();
   const stats = statsController();
 
-  // === AUTH ROUTES ===
+  // ================================================================
+  // AUTH ROUTES
+  // ================================================================
 
   /**
    * @swagger
@@ -38,7 +36,10 @@ export default (wss) => {
    *     tags: [Auth]
    *     security:
    *       - bearerAuth: []
-   *     summary: Get current authenticated user info
+   *     summary: Get authenticated user profile
+   *     responses:
+   *       200:
+   *         description: User details returned
    */
   router.get('/auth/me', checkJwt, auth.getMe);
 
@@ -49,11 +50,16 @@ export default (wss) => {
    *     tags: [Auth]
    *     security:
    *       - bearerAuth: []
-   *     summary: Sync Auth0 user into internal DB if not exists
+   *     summary: Register Auth0 user in DB if not already registered
+   *     responses:
+   *       200:
+   *         description: User synced successfully
    */
   router.post('/auth/register-if-needed', checkJwt, auth.syncUser);
 
-  // === USER PROFILE ROUTES ===
+  // ================================================================
+  // USER ROUTES
+  // ================================================================
 
   /**
    * @swagger
@@ -62,7 +68,7 @@ export default (wss) => {
    *     tags: [User]
    *     security:
    *       - bearerAuth: []
-   *     summary: Get user profile + subscription + streak
+   *     summary: Get full user profile
    */
   router.get('/user/profile', checkJwt, user.getProfile);
 
@@ -73,20 +79,22 @@ export default (wss) => {
    *     tags: [User]
    *     security:
    *       - bearerAuth: []
-   *     summary: Update user profile
+   *     summary: Update user preferences (style, gender, country)
    */
   router.put('/user/profile', checkJwt, user.updateProfile);
 
-  // === CONVERSATION ROUTES ===
+  // ================================================================
+  // SPEAK MODE (PRISMA SESSIONS)
+  // ================================================================
 
   /**
    * @swagger
    * /api/conversation/start:
    *   post:
-   *     tags: [Conversation]
+   *     tags: [SpeakMode]
    *     security:
    *       - bearerAuth: []
-   *     summary: Start a new conversation session
+   *     summary: Start a new Speak Mode conversation session
    */
   router.post('/conversation/start', checkJwt, conv.startSession);
 
@@ -94,32 +102,21 @@ export default (wss) => {
    * @swagger
    * /api/conversation/finish:
    *   post:
-   *     tags: [Conversation]
+   *     tags: [SpeakMode]
    *     security:
    *       - bearerAuth: []
-   *     summary: Finish a conversation and upload full script
+   *     summary: Finish session & upload full script to database
    */
   router.post('/conversation/finish', checkJwt, conv.finishSession);
 
   /**
    * @swagger
-   * /api/conversation/history:
-   *   get:
-   *     tags: [Conversation]
-   *     security:
-   *       - bearerAuth: []
-   *     summary: Get paginated list of finished conversations
-   */
-  router.get('/conversation/history', checkJwt, conv.getHistory);
-
-  /**
-   * @swagger
    * /api/conversation/{sessionId}:
    *   get:
-   *     tags: [Conversation]
+   *     tags: [SpeakMode]
    *     security:
    *       - bearerAuth: []
-   *     summary: Get a specific conversation by ID
+   *     summary: Retrieve one finished Speak Mode session
    */
   router.get('/conversation/:sessionId', checkJwt, conv.getSession);
 
@@ -127,192 +124,124 @@ export default (wss) => {
    * @swagger
    * /api/conversation/delete:
    *   delete:
-   *     tags: [Conversation]
+   *     tags: [SpeakMode]
    *     security:
    *       - bearerAuth: []
-   *     summary: Delete a conversation or all conversations
+   *     summary: Delete one or all Speak Mode sessions
    */
   router.delete('/conversation/delete', checkJwt, conv.deleteSession);
 
-  /**
- * @swagger
- * /api/conversation/reset:
- *   post:
- *     tags: [Conversation]
- *     security:
- *       - bearerAuth: []
- *     summary: Reset user's AI conversation state (history, topic, accuracy)
- *     requestBody:
- *       required: false
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               userId:
- *                 type: string
- *                 example: "u_123"
- *                 description: Optional. Defaults to "anonymous".
- *     responses:
- *       200:
- *         description: Conversation reset successful
- *         content:
- *           application/json:
- *             example:
- *               success: true
- *               data:
- *                 userId: "u_123"
- */
-router.post('/conversation/reset', checkJwt, conv.reset);
-
-
-/**
- * @swagger
- * /api/conversation/history:
- *   get:
- *     tags: [Conversation]
- *     security:
- *       - bearerAuth: []
- *     summary: Get full AI conversation history for a specific user
- *     parameters:
- *       - in: query
- *         name: userId
- *         schema:
- *           type: string
- *         required: false
- *         description: If omitted, defaults to "anonymous".
- *         example: "u_123"
- *     responses:
- *       200:
- *         description: Returns full CHAT_HISTORY stored in AI microservice
- *         content:
- *           application/json:
- *             example:
- *               success: true
- *               data:
- *                 userId: "u_123"
- *                 history:
- *                   - user: "I very like play soccer."
- *                     corrected_en: "I really like playing soccer."
- *                     feedback: "like 뒤에는 동명사 ~ing 형태를 쓰는 것이 자연스럽습니다..."
- *                     reply_en: "Nice! How often do you play soccer?"
- */
-router.get('/conversation/history', checkJwt, conv.getHistory);
-
-
-  // === SUBSCRIPTION ROUTES ===
+  // ================================================================
+  // AI MICRO-SERVICE CHAT MODE ROUTES
+  // ================================================================
 
   /**
    * @swagger
-   * /api/subscription/options:
+   * /api/conversation/reset:
+   *   post:
+   *     tags: [AI Chat]
+   *     security:
+   *       - bearerAuth: []
+   *     summary: Reset AI conversation state (history, accuracy, topic)
+   */
+  router.post('/conversation/reset', checkJwt, conv.reset);
+
+  /**
+   * @swagger
+   * /api/conversation/history:
    *   get:
-   *     tags: [Subscription]
-   *     summary: Get available subscription options
+   *     tags: [AI Chat]
+   *     security:
+   *       - bearerAuth: []
+   *     summary: Get full AI Chat history for the user
    */
-  router.get('/subscription/options', sub.getOptions);
+  router.get('/conversation/history', checkJwt, conv.getHistory);
+
+  // ================================================================
+  // AI MAIN ROUTES
+  // ================================================================
 
   /**
    * @swagger
-   * /api/subscription/subscribe:
+   * /api/ai/stt:
    *   post:
-   *     tags: [Subscription]
+   *     tags: [AI]
    *     security:
    *       - bearerAuth: []
-   *     summary: Start or change subscription
+   *     summary: Convert speech to text
    */
-  router.post('/subscription/subscribe', checkJwt, sub.subscribe);
+  router.post('/ai/stt', checkJwt, ai.stt);
 
   /**
    * @swagger
-   * /api/subscription/cancel:
+   * /api/ai/chat:
    *   post:
-   *     tags: [Subscription]
+   *     tags: [AI]
    *     security:
    *       - bearerAuth: []
-   *     summary: Cancel subscription
+   *     summary: Main grammar correction + feedback + reply engine
    */
-  router.post('/subscription/cancel', checkJwt, sub.cancel);
-
-  // === AI ROUTES ===
+  router.post('/ai/chat', checkJwt, ai.chat);
 
   /**
- * @swagger
- * /api/ai/stt:
- *   post:
- *     tags: [AI]
- *     security:
- *       - bearerAuth: []
- *     summary: Speech to text (audio → text)
- */
-router.post('/ai/stt', checkJwt, ai.stt);
+   * @swagger
+   * /api/ai/feedback:
+   *   post:
+   *     tags: [AI]
+   *     security:
+   *       - bearerAuth: []
+   *     summary: Provide grammar correction + explanation (no history update)
+   */
+  router.post('/ai/feedback', checkJwt, ai.feedback);
 
-/**
- * @swagger
- * /api/ai/chat:
- *   post:
- *     tags: [AI]
- *     security:
- *       - bearerAuth: []
- *     summary: Main AI conversation endpoint (English correction + feedback + reply)
- */
-router.post('/ai/chat', checkJwt, ai.chat);
+  /**
+   * @swagger
+   * /api/ai/tts:
+   *   post:
+   *     tags: [AI]
+   *     security:
+   *       - bearerAuth: []
+   *     summary: Convert text to audio (TTS WAV)
+   */
+  router.post('/ai/tts', checkJwt, ai.tts);
 
-/**
- * @swagger
- * /api/ai/feedback:
- *   post:
- *     tags: [AI]
- *     security:
- *       - bearerAuth: []
- *     summary: Sentence-level correction & explanation (without affecting stats)
- */
-router.post('/ai/feedback', checkJwt, ai.feedback);
+  /**
+   * @swagger
+   * /api/ai/example-reply:
+   *   post:
+   *     tags: [AI]
+   *     security:
+   *       - bearerAuth: []
+   *     summary: Generate sample student reply
+   */
+  router.post('/ai/example-reply', checkJwt, ai.exampleReply);
 
-/**
- * @swagger
- * /api/ai/tts:
- *   post:
- *     tags: [AI]
- *     security:
- *       - bearerAuth: []
- *     summary: Convert text to speech (WAV base64)
- */
-router.post('/ai/tts', checkJwt, ai.tts);
+  /**
+   * @swagger
+   * /api/ai/dictionary:
+   *   post:
+   *     tags: [AI]
+   *     security:
+   *       - bearerAuth: []
+   *     summary: English dictionary explanation with examples
+   */
+  router.post('/ai/dictionary', checkJwt, ai.dictionary);
 
-/**
- * @swagger
- * /api/ai/example-reply:
- *   post:
- *     tags: [AI]
- *     security:
- *       - bearerAuth: []
- *     summary: Generate a learner’s example reply based on AI message + user history
- */
-router.post('/ai/example-reply', checkJwt, ai.exampleReply);
+  // ================================================================
+  // PHRASES ROUTE
+  // ================================================================
+  /**
+   * @swagger
+   * /api/phrases:
+   *   get:
+   *     tags: [Phrases]
+   *     summary: Get memorization phrase list
+   */
+  router.get('/phrases', ai.getPhrases);
 
-/**
- * @swagger
- * /api/ai/dictionary:
- *   post:
- *     tags: [AI]
- *     security:
- *       - bearerAuth: []
- *     summary: Explain an English word/phrase with Korean meaning + usage examples
- */
-router.post('/ai/dictionary', checkJwt, ai.dictionary);
-
-  // === PHRASES ROUTE ===
-
-/**
- * @swagger
- * /api/phrases:
- *   get:
- *     tags: [Phrases]
- *     summary: Get default memorization phrases
- */
-router.get('/phrases', ai.getPhrases);
-  // === CONVERSATION SETTINGS ROUTES ===
-
+  // ================================================================
+  // USER SETTINGS
+  // ================================================================
   /**
    * @swagger
    * /api/conversation/settings:
@@ -320,7 +249,7 @@ router.get('/phrases', ai.getPhrases);
    *     tags: [Settings]
    *     security:
    *       - bearerAuth: []
-   *     summary: Get conversation settings
+   *     summary: Get user conversation settings
    */
   router.get('/conversation/settings', checkJwt, user.getSettings);
 
@@ -331,12 +260,13 @@ router.get('/phrases', ai.getPhrases);
    *     tags: [Settings]
    *     security:
    *       - bearerAuth: []
-   *     summary: Update conversation settings
+   *     summary: Update user conversation settings
    */
   router.put('/conversation/settings', checkJwt, user.updateSettings);
 
-  // === STATS ROUTES ===
-
+  // ================================================================
+  // STATS
+  // ================================================================
   /**
    * @swagger
    * /api/stats:
@@ -344,7 +274,7 @@ router.get('/phrases', ai.getPhrases);
    *     tags: [Stats]
    *     security:
    *       - bearerAuth: []
-   *     summary: Get learning statistics
+   *     summary: Get learning stats
    */
   router.get('/stats', checkJwt, stats.getStats);
 
@@ -355,12 +285,13 @@ router.get('/phrases', ai.getPhrases);
    *     tags: [Stats]
    *     security:
    *       - bearerAuth: []
-   *     summary: Legacy dashboard endpoint (same as profile)
+   *     summary: (Legacy) Dashboard summary
    */
   router.get('/dashboard', checkJwt, user.getDashboard);
 
-  // === NOTIFICATION ROUTES ===
-
+  // ================================================================
+  // NOTIFICATIONS
+  // ================================================================
   /**
    * @swagger
    * /api/notifications/settings:
@@ -368,7 +299,7 @@ router.get('/phrases', ai.getPhrases);
    *     tags: [Notifications]
    *     security:
    *       - bearerAuth: []
-   *     summary: Get notification settings
+   *     summary: Get notification preferences
    */
   router.get('/notifications/settings', checkJwt, (req, res) =>
     res.json({ success: true, data: { enabled: true } })
@@ -381,7 +312,7 @@ router.get('/phrases', ai.getPhrases);
    *     tags: [Notifications]
    *     security:
    *       - bearerAuth: []
-   *     summary: Update notification settings
+   *     summary: Update notification preferences
    */
   router.put('/notifications/settings', checkJwt, (req, res) =>
     res.json({ success: true, data: req.body })
