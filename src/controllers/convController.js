@@ -45,7 +45,12 @@ export default (wss) => {
             // 1. Update conversation status (Mark as finished)
             await prisma.conversation.update({
                 where: { id },
-                data: { finishedAt: new Date() }
+                data: { 
+                    finishedAt: new Date(),
+                    fullScript: script
+                        .map(m => `${m.from}: ${m.text}`)
+                        .join("\n")
+                }
             });
 
             // 2. Save all messages in bulk
