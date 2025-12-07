@@ -158,7 +158,7 @@ export default (wss) => {
   router.get('/conversation/history', checkJwt, conv.getHistory);
 
   // ================================================================
-  // AI MAIN ROUTES
+  // AI MAIN ROUTES  (proxy to AI microservice)
   // ================================================================
 
   /**
@@ -168,7 +168,7 @@ export default (wss) => {
    *     tags: [AI]
    *     security:
    *       - bearerAuth: []
-   *     summary: Convert speech to text
+   *     summary: Convert speech (base64 audio) to text using Google STT
    */
   router.post('/ai/stt', checkJwt, ai.stt);
 
@@ -179,7 +179,7 @@ export default (wss) => {
    *     tags: [AI]
    *     security:
    *       - bearerAuth: []
-   *     summary: Main grammar correction + feedback + reply engine
+   *     summary: Main AI chat endpoint (grammar + reply + history update)
    */
   router.post('/ai/chat', checkJwt, ai.chat);
 
@@ -190,7 +190,7 @@ export default (wss) => {
    *     tags: [AI]
    *     security:
    *       - bearerAuth: []
-   *     summary: Provide grammar correction + explanation (no history update)
+   *     summary: Grammar correction + explanation only (no history update)
    */
   router.post('/ai/feedback', checkJwt, ai.feedback);
 
@@ -201,7 +201,7 @@ export default (wss) => {
    *     tags: [AI]
    *     security:
    *       - bearerAuth: []
-   *     summary: Convert text to audio (TTS WAV)
+   *     summary: Text to speech (returns base64 WAV audio)
    */
   router.post('/ai/tts', checkJwt, ai.tts);
 
@@ -212,20 +212,66 @@ export default (wss) => {
    *     tags: [AI]
    *     security:
    *       - bearerAuth: []
-   *     summary: Generate sample student reply
+   *     summary: Generate an example sentence the student could reply with
    */
   router.post('/ai/example-reply', checkJwt, ai.exampleReply);
 
   /**
    * @swagger
-   * /api/ai/dictionary:
+   * /api/ai/review:
    *   post:
    *     tags: [AI]
    *     security:
    *       - bearerAuth: []
-   *     summary: English dictionary explanation with examples
+   *     summary: Get overall speaking review / accuracy summary from AI
    */
-  router.post('/ai/dictionary', checkJwt, ai.dictionary);
+  router.post('/ai/review', checkJwt, ai.review);
+
+  /**
+   * @swagger
+   * /api/ai/stats/accuracy:
+   *   get:
+   *     tags: [AI]
+   *     security:
+   *       - bearerAuth: []
+   *     summary: Get AI accuracy statistics from microservice
+   */
+  router.get('/ai/stats/accuracy', checkJwt, ai.getAccuracy);
+
+  /**
+   * @swagger
+   * /api/ai/conversation/history:
+   *   get:
+   *     tags: [AI Chat]
+   *     security:
+   *       - bearerAuth: []
+   *     summary: Get AI conversation history (from AI microservice)
+   */
+  router.get('/ai/conversation/history', checkJwt, ai.getConversationHistory);
+
+  /**
+   * @swagger
+   * /api/ai/conversation/reset:
+   *   post:
+   *     tags: [AI Chat]
+   *     security:
+   *       - bearerAuth: []
+   *     summary: Reset AI conversation state (history, topic, etc.)
+   */
+  router.post('/ai/conversation/reset', checkJwt, ai.resetConversation);
+
+  // ================================================================
+  // PHRASES ROUTE (local helper, not from AI microservice)
+  // ================================================================
+  /**
+   * @swagger
+   * /api/phrases:
+   *   get:
+   *     tags: [Phrases]
+   *     summary: Get memorization phrase list (local, not AI)
+   */
+  router.get('/phrases', ai.getPhrases);
+
 
   // ================================================================
   // PHRASES ROUTE
