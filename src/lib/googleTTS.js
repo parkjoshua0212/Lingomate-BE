@@ -1,37 +1,42 @@
 // src/lib/googleTTS.js
-// Google TTS(음성 합성) 통역사 보관함
+// Custom AI Server TTS proxy (replaces Google TTS)
 
-import { TextToSpeechClient } from '@google-cloud/text-to-speech';
-import path from 'path';
+import axios from 'axios';
 
-// 1. 키 파일 경로 (STT랑 같은 키 사용)
-const keyFilename = path.join(process.cwd(), 'google-credentials.json');
+const AI_BASE_URL = process.env.AI_SERVICE_URL; // e.g. http://lingomate-env...
 
-// 2. TTS 통역사 생성
-const ttsClient = new TextToSpeechClient({ keyFilename });
+if (!AI_BASE_URL) {
+  console.warn('[AI TTS] Warning: AI_SERVICE_URL is not set – TTS requests will fail');
+}
 
-// 3. 텍스트를 받아서 '오디오(MP3)'로 바꿔주는 함수
-export const synthesizeSpeech = async (text) => {
+/**
+ * synthesizeSpeech(text, accent, gender)
+ * Calls your AI server's TTS endpoint and returns an audio Buffer
+ */
+export const synthesizeSpeech = async (text, accent = 'us', gender = 'female') => {
   try {
-    const request = {
-      input: { text: text },
-      // voice: 언어 및 성별 설정 (일단 영어/중성으로 설정)
-      // 나중에 프론트에서 언어 설정을 받아와서 바꾸면 됨
-      voice: { languageCode: 'en-US', ssmlGender: 'NEUTRAL' },
-      // audioConfig: MP3로 압축해서 받기
-      audioConfig: { audioEncoding: 'MP3' },
-    };
+    const url = `${AI_BASE_URL}/api/ai/tts`;
+    console.log('[AI TTS] Sending TTS request to:', url);
 
-    // TTS API 호출!
-    const [response] = await ttsClient.synthesizeSpeech(request);
-    
-    // 오디오 데이터(Binary Buffer) 반환
-    return response.audioContent;
+    const payload = { text, accent, gender };
+    console.log('[AI TTS] Payload:', payload);
 
+    const response = await axios.post(url, payload, {
+      timeout: 15000,
+      responseType: 'arraybuffer', // receive binary audio
+    });
+
+    console.log('[AI TTS] Received audio data length:', response.data?.length);
+
+    // Return raw binary buffer
+    return Buffer.from(response.data);
   } catch (error) {
-    console.error('[Google TTS] 변환 에러:', error);
-    throw error;
+    console.error('[AI TTS] TTS request failed:', {
+      message: error.message,
+      code: error.code,
+      status: error.response?.status,
+      data: error.response?.data,
+    });
+    throw new Error('AI TTS service failed');
   }
 };
-
-export default ttsClient;

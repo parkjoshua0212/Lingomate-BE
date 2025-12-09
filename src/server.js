@@ -12,6 +12,7 @@ import swaggerJSDoc from "swagger-jsdoc";
 import { auth as jwtAuth } from "express-oauth2-jwt-bearer";
 import jwt from "jsonwebtoken";
 import jwksClient from "jwks-rsa";
+import bodyParser from "body-parser";
 
 import apiRoutes from "./routes/apiRoutes.js";
 
@@ -35,7 +36,8 @@ if (!AUTH0_DOMAIN || !AUTH0_ISSUER || !AUTH0_AUDIENCE) {
 // 2. EXPRESS MIDDLEWARE
 // -------------------------------------------------------------
 app.use(cors({ origin: "*", credentials: true }));
-app.use(express.json());
+app.use(express.json({limit: '10mb'})); // to support JSON-encoded bodies
+app.use(express.urlencoded({ extended: true, limit: '10mb' })); // to support URL-encoded bodies
 
 // PROTECTED ROUTE MIDDLEWARE (not applied globally)
 const checkJwt = jwtAuth({
