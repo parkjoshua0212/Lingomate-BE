@@ -10,48 +10,105 @@ export default (wss) => {
     // ============================================================
     // 1) AI MICRO-SERVICE: RESET CHAT HISTORY
     // ============================================================
-    controller.reset = async (req, res) => {
-        const { userId } = req.body;
+    // 1) RESET: clear all conversation history for the logged-in user (Prisma)
+controller.reset = async (req, res) => {
+    const auth0Sub = req.auth?.payload?.sub;
 
-        try {
-            const { data } = await axios.post(`${AI_URL}/reset`, {
-                userId: userId || "anonymous",
-            });
+    try {
+        // Find the user by Auth0 sub
+        const user = await prisma.user.findUnique({
+            where: { auth0Sub },
+        });
 
-            return res.json(successResponse({ userId: data.userId }));
-        } catch (err) {
-            console.error("RESET ERROR:", err?.response?.data || err);
+        if (!user) {
             return res
-                .status(500)
-                .json(errorResponse("AI_ERR", "Conversation reset failed"));
+                .status(404)
+                .json(errorResponse("USER_404", "User not found", 404));
         }
-    };
+
+        // Delete all conversations for this user
+        // (Messages should be deleted via cascades, same as deleteSession)
+        const result = await prisma.conversation.deleteMany({
+            where: { userId: user.id },
+        });
+
+        return res.json(
+            successResponse({
+                userId: user.id,
+                deletedConversations: result.count,
+            })
+        );
+    } catch (err) {
+        console.error("RESET ERROR:", err);
+        return res
+            .status(500)
+            .json(
+                errorResponse(
+                    "SERVER_ERR",
+                    "Conversation reset failed"
+                )
+            );
+    }
+};
+
 
     // ============================================================
     // 2) AI MICRO-SERVICE: GET FULL CHAT HISTORY
     // ============================================================
-    controller.getHistory = async (req, res) => {
-        const userId = req.query.userId || "anonymous";
+    // 2) Get FULL chat/speak history for the logged-in user (from Prisma)
+controller.getHistory = async (req, res) => {
+    const auth0Sub = req.auth?.payload?.sub;
 
-        try {
-            const { data } = await axios.get(
-                `${AI_URL}/conversation/history`,
-                { params: { userId } }
-            );
+    try {
+        // 1) Find the user by Auth0 sub
+        const user = await prisma.user.findUnique({
+            where: { auth0Sub },
+        });
 
-            return res.json(
-                successResponse({
-                    userId: data.userId,
-                    history: data.history,
-                })
-            );
-        } catch (err) {
-            console.error("HISTORY ERROR:", err?.response?.data || err);
+        if (!user) {
             return res
-                .status(500)
-                .json(errorResponse("AI_ERR", "Failed to load history"));
+                .status(404)
+                .json(errorResponse("USER_404", "User not found", 404));
         }
-    };
+
+        // 2) Fetch this user's conversations + messages
+        const conversations = await prisma.conversation.findMany({
+            where: { userId: user.id },
+            include: {
+                messages: {
+                    orderBy: { id: "asc" },
+                },
+            },
+            orderBy: { startedAt: "desc" },
+            // optional: limit how many sessions you return
+            // take: 20,
+        });
+
+        // 3) Shape it into a simple history object
+        const history = conversations.map((conv) => ({
+            sessionId: conv.id,
+            startTime: conv.startedAt,
+            finishedAt: conv.finishedAt,
+            script: conv.messages.map((m) => ({
+                from: m.sender.toLowerCase(), // "ai" | "user"
+                text: m.content,
+            })),
+        }));
+
+        return res.json(
+            successResponse({
+                userId: user.id,
+                history,
+            })
+        );
+    } catch (err) {
+        console.error("HISTORY ERROR:", err);
+        return res
+            .status(500)
+            .json(errorResponse("SERVER_ERR", "Failed to load history"));
+    }
+};
+
 
     // ============================================================
     // BELOW: PRISMA SPEAK-MODE SESSION LOGIC (VOICE MODE)
@@ -101,55 +158,84 @@ export default (wss) => {
     // 4) Finish Session + Save Messages
     // ============================================================
     controller.finishSession = async (req, res) => {
-        const { sessionId, script } = req.body;
+    const { sessionId, script } = req.body;
 
-        if (!sessionId || !Array.isArray(script)) {
-            return res.status(400).json(
-                errorResponse(
-                    "BAD_REQ",
-                    "Missing sessionId or script array",
-                    400
-                )
-            );
-        }
+    // Basic validation
+    if (!sessionId || !Array.isArray(script)) {
+        return res.status(400).json(
+            errorResponse(
+                "BAD_REQ",
+                "Missing sessionId or script array",
+                400
+            )
+        );
+    }
 
-        try {
-            const id = parseInt(sessionId);
+    const id = Number(sessionId);
+    if (!Number.isInteger(id) || id <= 0) {
+        return res
+            .status(400)
+            .json(errorResponse("BAD_REQ", "Invalid sessionId", 400));
+    }
 
-            // Mark session as finished
-            await prisma.conversation.update({
-                where: { id },
-                data: { finishedAt: new Date() },
-            });
+    try {
+        // (Optional but recommended) Check the session exists
+        const conversation = await prisma.conversation.findUnique({
+            where: { id },
+        });
 
-            // Save messages individually
-            const messagesData = script.map((msg) => ({
-                conversationId: id,
-                sender: msg.from.toLowerCase() === "ai" ? "AI" : "USER",
-                content: msg.text,
-            }));
-
-            if (messagesData.length > 0) {
-                await prisma.message.createMany({
-                    data: messagesData,
-                });
-            }
-
-            return res.json(
-                successResponse({
-                    sessionId: id,
-                    savedMessages: messagesData.length,
-                })
-            );
-        } catch (err) {
-            console.error("FINISH SESSION ERROR:", err);
+        if (!conversation) {
             return res
-                .status(500)
+                .status(404)
                 .json(
-                    errorResponse("SERVER_ERR", "Failed to save conversation")
+                    errorResponse(
+                        "NOT_FOUND",
+                        "Conversation session not found",
+                        404
+                    )
                 );
         }
-    };
+
+        // If you want, also check ownership here (recommended):
+        // const auth0Sub = req.auth?.payload?.sub;
+        // const user = await prisma.user.findUnique({ where: { auth0Sub } });
+        // if (!user || user.id !== conversation.userId) { ... 403 ... }
+
+        // Mark session as finished
+        await prisma.conversation.update({
+            where: { id },
+            data: { finishedAt: new Date() },
+        });
+
+        // Save messages individually
+        const messagesData = script.map((msg) => ({
+            conversationId: id,
+            sender: msg.from.toLowerCase() === "ai" ? "AI" : "USER",
+            content: msg.text,
+        }));
+
+        if (messagesData.length > 0) {
+            await prisma.message.createMany({
+                data: messagesData,
+            });
+        }
+
+        return res.json(
+            successResponse({
+                sessionId: id,
+                savedMessages: messagesData.length,
+            })
+        );
+    } catch (err) {
+        console.error("FINISH SESSION ERROR:", err);
+        return res
+            .status(500)
+            .json(
+                errorResponse("SERVER_ERR", "Failed to save conversation")
+            );
+    }
+};
+
 
     // ============================================================
     // 5) Get a Speak-Mode Session
@@ -194,38 +280,37 @@ export default (wss) => {
     // 6) Delete Speak-Mode Session(s)
     // ============================================================
     controller.deleteSession = async (req, res) => {
-        const { sessionId, all } = req.body;
-        const auth0Sub = req.auth?.payload?.sub;
+    const { sessionId, all } = req.body;
+    const auth0Sub = req.auth?.payload?.sub;
 
-        try {
-            const user = await prisma.user.findUnique({
-                where: { auth0Sub },
+    try {
+        // 1) Find logged-in user
+        const user = await prisma.user.findUnique({
+            where: { auth0Sub },
+        });
+
+        if (!user) {
+            return res
+                .status(404)
+                .json(errorResponse("USER_404", "User not found", 404));
+        }
+
+        // 2) Delete ALL conversations for this user
+        if (all) {
+            const result = await prisma.conversation.deleteMany({
+                where: { userId: user.id },
             });
 
-            if (!user) {
-                return res
-                    .status(404)
-                    .json(errorResponse("USER_404", "User not found", 404));
-            }
+            return res.json(
+                successResponse(
+                    { deletedConversations: result.count },
+                    "All conversations deleted"
+                )
+            );
+        }
 
-            if (all) {
-                await prisma.conversation.deleteMany({
-                    where: { userId: user.id },
-                });
-
-                return res.json(
-                    successResponse(null, "All conversations deleted")
-                );
-            }
-
-            if (sessionId) {
-                await prisma.conversation.delete({
-                    where: { id: parseInt(sessionId) },
-                });
-
-                return res.json(successResponse(null, "Conversation deleted"));
-            }
-
+        // 3) Delete ONE conversation by sessionId
+        if (sessionId === undefined || sessionId === null) {
             return res
                 .status(400)
                 .json(
@@ -235,13 +320,50 @@ export default (wss) => {
                         400
                     )
                 );
-        } catch (err) {
-            console.error("DELETE SESSION ERROR:", err);
-            return res
-                .status(500)
-                .json(errorResponse("SERVER_ERR", "Delete failed"));
         }
-    };
+
+        const id = Number(sessionId);
+        if (!Number.isInteger(id) || id <= 0) {
+            return res
+                .status(400)
+                .json(errorResponse("BAD_REQ", "Invalid sessionId", 400));
+        }
+
+        // Only delete conversations that belong to this user
+        const result = await prisma.conversation.deleteMany({
+            where: {
+                id,
+                userId: user.id,
+            },
+        });
+
+        if (result.count === 0) {
+            // No rows matched: either wrong id or not this user's session
+            return res
+                .status(404)
+                .json(
+                    errorResponse(
+                        "NOT_FOUND",
+                        "Conversation not found",
+                        404
+                    )
+                );
+        }
+
+        return res.json(
+            successResponse(
+                { deletedConversations: result.count },
+                "Conversation deleted"
+            )
+        );
+    } catch (err) {
+        console.error("DELETE SESSION ERROR:", err);
+        return res
+            .status(500)
+            .json(errorResponse("SERVER_ERR", "Delete failed"));
+    }
+};
+
 
     return controller;
 };
