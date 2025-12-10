@@ -12,42 +12,46 @@ import swaggerJSDoc from "swagger-jsdoc";
 import { auth as jwtAuth } from "express-oauth2-jwt-bearer";
 import jwt from "jsonwebtoken";
 import jwksClient from "jwks-rsa";
-import bodyParser from "body-parser";
 
 import apiRoutes from "./routes/apiRoutes.js";
 
 const app = express();
 const PORT = process.env.PORT || 8080;
 
+const PUBLIC_BASE_URL =
+  process.env.PUBLIC_BASE_URL ||
+  "http://lingomate-backend.ap-northeast-2.elasticbeanstalk.com";
+
 // -------------------------------------------------------------
-// 1. ENVIRONMENT CHECKS
+// ENVIRONMENT CHECKS
 // -------------------------------------------------------------
 const AUTH0_DOMAIN = process.env.AUTH0_DOMAIN;
-const AUTH0_ISSUER = process.env.AUTH0_ISSUER_BASE_URL; // must end with `/`
+const AUTH0_ISSUER = process.env.AUTH0_ISSUER_BASE_URL;
 const AUTH0_AUDIENCE = process.env.AUTH0_AUDIENCE;
 
 if (!AUTH0_DOMAIN || !AUTH0_ISSUER || !AUTH0_AUDIENCE) {
-  console.error("[FATAL] Missing required Auth0 environment variables.");
-  console.error("Check .env file for AUTH0_DOMAIN, AUTH0_ISSUER_BASE_URL, AUTH0_AUDIENCE");
+  console.error("[FATAL] Missing Auth0 env variables");
   process.exit(1);
 }
 
 // -------------------------------------------------------------
-// 2. EXPRESS MIDDLEWARE
+// EXPRESS MIDDLEWARE
 // -------------------------------------------------------------
 app.use(cors({ origin: "*", credentials: true }));
-app.use(express.json({limit: '10mb'})); // to support JSON-encoded bodies
-app.use(express.urlencoded({ extended: true, limit: '10mb' })); // to support URL-encoded bodies
 
-// PROTECTED ROUTE MIDDLEWARE (not applied globally)
+// Support large audio uploads (10mb)
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+
+// Auth middleware (not applied globally)
 const checkJwt = jwtAuth({
-  issuerBaseURL: AUTH0_ISSUER,     // ex: https://dev-xxx.us.auth0.com/
-  audience: AUTH0_AUDIENCE,        // ex: https://api.lingomate.com
+  issuerBaseURL: AUTH0_ISSUER,
+  audience: AUTH0_AUDIENCE,
   tokenSigningAlg: "RS256",
 });
 
 // -------------------------------------------------------------
-// 3. JWKS CLIENT FOR WEBSOCKETS
+// JWKS FOR WEBSOCKETS
 // -------------------------------------------------------------
 const jwks = jwksClient({
   jwksUri: `${AUTH0_ISSUER}.well-known/jwks.json`,
@@ -56,13 +60,12 @@ const jwks = jwksClient({
 function getKey(header, callback) {
   jwks.getSigningKey(header.kid, (err, key) => {
     if (err) return callback(err);
-    const signingKey = key.publicKey || key.rsaPublicKey;
-    callback(null, signingKey);
+    callback(null, key.publicKey || key.rsaPublicKey);
   });
 }
 
 // -------------------------------------------------------------
-// 4. SWAGGER DOCUMENTATION
+// SWAGGER
 // -------------------------------------------------------------
 const swaggerSpec = swaggerJSDoc({
   definition: {
@@ -70,9 +73,12 @@ const swaggerSpec = swaggerJSDoc({
     info: {
       title: "LingoMate API v2.1",
       version: "2.1.0",
-      description: "Backend API Documentation for LingoMate App",
+      description: "Backend API Documentation",
     },
-    servers: [{ url: `http://localhost:${PORT}` }],
+    servers: [
+      { url: PUBLIC_BASE_URL },
+      { url: `http://localhost:${PORT}` },
+    ],
     components: {
       securitySchemes: {
         bearerAuth: {
@@ -90,21 +96,18 @@ const swaggerSpec = swaggerJSDoc({
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 // -------------------------------------------------------------
-// 5. PUBLIC ROUTE
+// BASIC ROUTE
 // -------------------------------------------------------------
 app.get("/", (req, res) =>
   res.send("LingoMate Backend v2.1 is Running!")
 );
 
 // -------------------------------------------------------------
-// 6. HTTP + WEBSOCKET SERVER SETUP
+// HTTP + WEBSOCKET SETUP
 // -------------------------------------------------------------
 const server = http.createServer(app);
-
-// WebSocket server (no direct listening)
 const wss = new WebSocketServer({ noServer: true });
 
-// Upgrade handler for WebSocket authentication
 server.on("upgrade", (req, socket, head) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
@@ -146,16 +149,12 @@ server.on("upgrade", (req, socket, head) => {
 
 // WebSocket behavior
 wss.on("connection", (ws) => {
-  console.log(`[WebSocket] Connected → User: ${ws.user?.sub}`);
+  console.log(`[WS] Connected → User: ${ws.user?.sub}`);
 
   ws.isAlive = true;
   ws.on("pong", () => (ws.isAlive = true));
-
-  ws.on("message", (msg) => {
-    console.log(`[WS Message]`, msg.toString());
-  });
-
-  ws.on("close", () => console.log("[WS] Client disconnected"));
+  ws.on("message", (msg) => console.log("[WS MSG]", msg.toString()));
+  ws.on("close", () => console.log("[WS] Disconnected"));
 });
 
 // Heartbeat
@@ -168,14 +167,14 @@ setInterval(() => {
 }, 30000);
 
 // -------------------------------------------------------------
-// 7. ROUTES (apiRoutes applies checkJwt internally)
+// ROUTES
 // -------------------------------------------------------------
 app.use("/api", apiRoutes(checkJwt, wss));
 
 // -------------------------------------------------------------
-// 8. START SERVER
+// START SERVER
 // -------------------------------------------------------------
 server.listen(PORT, () => {
   console.log(`[SERVER] Running on port ${PORT}`);
-  console.log(`[DOCS] http://localhost:${PORT}/api-docs`);
+  console.log(`[DOCS] ${PUBLIC_BASE_URL}/api-docs`);
 });

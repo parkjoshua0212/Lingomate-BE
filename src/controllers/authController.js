@@ -4,14 +4,17 @@ import { successResponse, errorResponse } from '../utils/response.js';
 export default () => {
     const controller = {};
 
+    // ============================================================
     // GET /api/auth/me
+    // Strict lookup version (NO auto-create)
+    // ============================================================
     controller.getMe = async (req, res) => {
         const auth0Sub = req.auth?.payload?.sub;
 
         try {
             const user = await prisma.user.findUnique({
-                where: { auth0Sub },    // <── YOUR REAL PRISMA FIELD
-                include: { subscription: true }
+                where: { auth0Sub },   // strict lookup
+                include: { subscription: true }  // keep your version's include
             });
 
             if (!user) {
@@ -20,29 +23,31 @@ export default () => {
                 );
             }
 
-            res.json(successResponse({
+            return res.json(successResponse({
                 auth0Id: auth0Sub,
                 userId: user.id,
                 email: user.email,
                 name: user.username,
-                subscription: user.subscription?.planName || 'free'
+                subscription: user.subscription?.planName || "free",
             }));
 
         } catch (err) {
-            res.status(500).json(errorResponse("DB_ERR", err.message));
+            return res.status(500).json(errorResponse("DB_ERR", err.message));
         }
     };
 
-
+    // ============================================================
     // POST /api/auth/register-if-needed
+    // Auto-create version (from your original code)
+    // ============================================================
     controller.syncUser = async (req, res) => {
         const auth0Sub = req.auth?.payload?.sub;
         const { username, email, avatarUrl } = req.body;
 
         try {
-            // 1. Check if user exists
+            // 1. Check if user already exists
             let user = await prisma.user.findUnique({
-                where: { auth0Sub },   // <── MUST MATCH PRISMA FIELD
+                where: { auth0Sub },
                 include: { stats: true, subscription: true }
             });
 
@@ -50,10 +55,10 @@ export default () => {
                 return res.json(successResponse(user, "Login successful"));
             }
 
-            // 2. Create new user
+            // 2. Create new user (your Prisma create logic)
             user = await prisma.user.create({
                 data: {
-                    auth0Sub,             // <── Insert using correct field
+                    auth0Sub,
                     username: username || "User",
                     email,
                     avatarUrl,
@@ -63,10 +68,12 @@ export default () => {
                 include: { stats: true, subscription: true }
             });
 
-            res.status(201).json(successResponse(user, "User registered successfully"));
+            return res
+                .status(201)
+                .json(successResponse(user, "User registered successfully"));
 
         } catch (err) {
-            res.status(500).json(errorResponse("DB_ERR", err.message));
+            return res.status(500).json(errorResponse("DB_ERR", err.message));
         }
     };
 

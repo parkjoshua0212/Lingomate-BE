@@ -23,7 +23,7 @@ datasource db {
 model User {
   id            Int      @id @default(autoincrement()) @map("user_id")
   auth0Sub      String   @unique @map("auth0_sub") 
-  username      String   @db.VarChar(100)
+  username      String?   @db.VarChar(100)
   email         String?  @unique @db.VarChar(255)
   avatarUrl     String?  @map("avatar_url")
   

@@ -1,5 +1,7 @@
+// src/routes/apiRoutes.js
 import express from 'express';
 import { auth as checkJwtMiddleware } from 'express-oauth2-jwt-bearer';
+import multer from "multer";
 
 import authController from '../controllers/authController.js';
 import userController from '../controllers/usersController.js';
@@ -7,8 +9,19 @@ import conversationController from '../controllers/convController.js';
 import aiController from '../controllers/aiController.js';
 import subscriptionController from '../controllers/subscriptionController.js';
 import statsController from '../controllers/statsController.js';
+import homeController from '../controllers/home.controller.js';
+
+
+
+
+// ==================== SETUP ====================
 
 const router = express.Router();
+
+// Multer for PCM audio uploads (limit 5MB)
+const upload = multer({
+  limits: { fileSize: 5 * 1024 * 1024 },
+});
 
 const checkJwt = checkJwtMiddleware({
   audience: process.env.AUTH0_AUDIENCE,
@@ -16,7 +29,8 @@ const checkJwt = checkJwtMiddleware({
   tokenSigningAlg: "RS256",
 });
 
-// Inject WebSocket
+// ==================== CONTROLLERS ====================
+
 export default (wss) => {
   const auth = authController();
   const user = userController();
@@ -24,6 +38,10 @@ export default (wss) => {
   const ai = aiController();
   const sub = subscriptionController();
   const stats = statsController();
+  const home = homeController();   // IMPORTANT: use this instance
+
+  console.log("DEBUG: homeController import =", homeController);
+  console.log("DEBUG: home instance =", home);
 
   // ==================== AUTH ROUTES ====================
   router.get('/auth/me', checkJwt, auth.getMe);
@@ -37,23 +55,40 @@ export default (wss) => {
   router.post('/conversation/start', checkJwt, conv.startSession);
   router.post('/conversation/finish', checkJwt, conv.finishSession);
 
-  // ==================== AI MICRO-SERVICE CHAT MODE (conv.*) ====================
+  // ==================== AI MICRO-SERVICE CONVERSATION ROUTES ====================
   router.post('/conversation/reset', checkJwt, conv.reset);
   router.get('/conversation/history', checkJwt, conv.getHistory);
 
-  // Single speak-mode session (numeric ID only)
   router.get('/conversation/:sessionId', checkJwt, conv.getSession);
   router.delete('/conversation/delete', checkJwt, conv.deleteSession);
 
-  // ==================== AI MAIN ROUTES ====================
-  router.post('/ai/stt', checkJwt, ai.stt);
+  // ==================== AI ROUTES ====================
+
+  // STT (PCM Audio Upload)
+  router.post('/ai/stt', checkJwt, upload.single('audio'), ai.stt);
+
+  // Chat
   router.post('/ai/chat', checkJwt, ai.chat);
+
+  // Feedback
   router.post('/ai/feedback', checkJwt, ai.feedback);
+
+  // TTS (AI-server version)
   router.post('/ai/tts', checkJwt, ai.tts);
+
+  // Example reply
   router.post('/ai/example-reply', checkJwt, ai.exampleReply);
+
+  // Review
   router.post('/ai/review', checkJwt, ai.review);
+
+  // Stats
   router.get('/ai/stats/accuracy', checkJwt, ai.getAccuracy);
+
+  // Conversation History
   router.get('/ai/conversation/history', checkJwt, ai.getConversationHistory);
+
+  // Reset Conversation
   router.post('/ai/conversation/reset', checkJwt, ai.resetConversation);
 
   // ==================== PHRASES ROUTE ====================
@@ -74,6 +109,9 @@ export default (wss) => {
   router.put('/notifications/settings', checkJwt, (req, res) =>
     res.json({ success: true, data: req.body })
   );
+
+  // ==================== HOME ROUTE (FIXED) ====================
+  router.get('/home/status', checkJwt, home.getHomeStatus);
 
   return router;
 };
