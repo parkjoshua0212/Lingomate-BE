@@ -4,6 +4,11 @@ import { successResponse, errorResponse } from "../utils/response.js";
 import { sttViaAI } from "../lib/aiSttClient.js";
 import { ttsViaAI } from "../lib/aiTtsClient.js";
 
+import fs from "fs";
+import os from "os";
+import path from "path";
+import { spawn } from "child_process";
+
 const AI_BASE_URL = process.env.AI_SERVICE_URL;
 
 if (!AI_BASE_URL) {
@@ -64,96 +69,199 @@ async function callAi(method, path, body, label, res) {
   }
 }
 
+// ----------- NEW: ffmpeg convert helper (any audio -> raw PCM s16le, 16k, mono) -----------
+function runFfmpegConvertToPcm16kMono(inPath, outPath) {
+  return new Promise((resolve, reject) => {
+    // Output spec required by your AI team’s python test:
+    // - 16000Hz
+    // - mono
+    // - 16-bit PCM
+    // - RAW (no wav header): -f s16le
+    const args = [
+      "-y",
+      "-i",
+      inPath,
+      "-ac",
+      "1",
+      "-ar",
+      "16000",
+      "-f",
+      "s16le",
+      outPath,
+    ];
+
+    const p = spawn("ffmpeg", args);
+
+    let stderr = "";
+    p.stderr.on("data", (d) => (stderr += d.toString()));
+
+    p.on("close", (code) => {
+      if (code === 0) return resolve();
+      reject(new Error(`ffmpeg failed (code=${code}): ${stderr}`));
+    });
+  });
+}
+
+async function convertUploadToPcm16kMono(file) {
+  // file: multer object { buffer, originalname, mimetype, ... }
+  const tmpDir = os.tmpdir();
+
+  // Use extension from original filename if present, else fallback
+  const ext = path.extname(file.originalname || "").toLowerCase() || ".bin";
+
+  const inPath = path.join(
+    tmpDir,
+    `stt_in_${Date.now()}_${Math.random().toString(16).slice(2)}${ext}`
+  );
+  const outPath = path.join(
+    tmpDir,
+    `stt_out_${Date.now()}_${Math.random().toString(16).slice(2)}.pcm`
+  );
+
+  try {
+    fs.writeFileSync(inPath, file.buffer);
+    await runFfmpegConvertToPcm16kMono(inPath, outPath);
+    const pcm = fs.readFileSync(outPath);
+    return pcm;
+  } finally {
+    // cleanup
+    try {
+      if (fs.existsSync(inPath)) fs.unlinkSync(inPath);
+    } catch {}
+    try {
+      if (fs.existsSync(outPath)) fs.unlinkSync(outPath);
+    } catch {}
+  }
+}
+
 export default () => {
   const controller = {};
 
   // ============================
-  // 1) STT — PCM upload
+  // 1) STT — Upload ANY audio, backend converts to 16k mono PCM s16le raw
   // ============================
   controller.stt = async (req, res) => {
-  console.log("\n================= [AI STT] Incoming Request =================");
-
-  try {
-    console.log("[AI STT] Request metadata:", {
-      hasFile: !!req.file,
-      fileFieldName: req.file?.fieldname,
-      bodyKeys: Object.keys(req.body || {}),
-      contentType: req.headers["content-type"],
-    });
-
-    if (!req.file) {
-      console.error("[AI STT] ERROR: No PCM file uploaded");
-      return res
-        .status(400)
-        .json(errorResponse("BAD_REQ", "PCM audio file required", 400));
-    }
-
-    const pcmBuffer = req.file.buffer;
-
-    console.log("[AI STT] PCM file info:", {
-      sizeBytes: pcmBuffer.length,
-      isEmpty: pcmBuffer.length === 0,
-      firstBytes: pcmBuffer.slice(0, 32).toString("hex"),
-    });
-
-    if (pcmBuffer.length === 0) {
-      console.error("[AI STT] ERROR: PCM buffer is empty");
-      return res
-        .status(400)
-        .json(errorResponse("BAD_REQ", "PCM file empty", 400));
-    }
-
-    const sampleRate = req.body.sampleRate
-      ? Number(req.body.sampleRate)
-      : 16000;
-
-    console.log("[AI STT] Sample rate:", sampleRate);
-    console.log("[AI STT] forwarding to AI server", {
-      bytes: pcmBuffer.length,
-      sampleRate,
-    });
-
-    let transcript;
-    let altSegments;
+    console.log("\n================= [AI STT] Incoming Request =================");
 
     try {
-      const result = await sttViaAI(pcmBuffer, sampleRate);
-      transcript = result.transcript;
-      altSegments = result.altSegments;
+      console.log("[AI STT] Request metadata:", {
+        hasFile: !!req.file,
+        fileFieldName: req.file?.fieldname,
+        originalname: req.file?.originalname,
+        mimetype: req.file?.mimetype,
+        bodyKeys: Object.keys(req.body || {}),
+        contentType: req.headers["content-type"],
+      });
 
-      console.log("[AI STT] AI STT result:", {
-        transcriptPreview: transcript ? transcript.slice(0, 80) : null,
-        altSegmentsCount: altSegments?.length || 0,
+      if (!req.file) {
+        console.error("[AI STT] ERROR: No audio file uploaded");
+        return res
+          .status(400)
+          .json(errorResponse("BAD_REQ", "Audio file required (field name: audio)", 400));
+      }
+
+      // ✅ Decide whether to convert:
+      const originalName = (req.file.originalname || "").toLowerCase();
+      const isAlreadyRawPcm = originalName.endsWith(".pcm");
+
+      let pcmBuffer;
+
+      if (isAlreadyRawPcm) {
+        // treat as already-correct raw pcm
+        pcmBuffer = req.file.buffer;
+        console.log("[AI STT] Input is .pcm, skipping conversion", {
+          bytes: pcmBuffer.length,
+          firstBytes: pcmBuffer.slice(0, 16).toString("hex"),
+        });
+      } else {
+        console.log("[AI STT] Converting uploaded audio -> 16k mono PCM s16le raw via ffmpeg...");
+        pcmBuffer = await convertUploadToPcm16kMono(req.file);
+
+        console.log("[AI STT] Conversion done", {
+          originalBytes: req.file.buffer.length,
+          pcmBytes: pcmBuffer.length,
+          firstBytes: pcmBuffer.slice(0, 16).toString("hex"),
+        });
+      }
+
+      if (!pcmBuffer || pcmBuffer.length === 0) {
+        console.error("[AI STT] ERROR: Converted PCM buffer is empty");
+        return res
+          .status(400)
+          .json(errorResponse("BAD_REQ", "Converted PCM is empty", 400));
+      }
+
+      // ✅ Force the sampleRate to what your AI team expects
+      const sampleRate = 16000;
+
+      console.log("[AI STT] forwarding to AI server", {
+        bytes: pcmBuffer.length,
+        sampleRate,
       });
-    } catch (sttErr) {
-      console.error("[AI STT] ERROR inside sttViaAI()", {
-        message: sttErr.message,
-        stack: sttErr.stack,
-        response: sttErr.response?.data,
+
+      let transcript;
+      let altSegments;
+
+      try {
+        const result = await sttViaAI(pcmBuffer, sampleRate);
+        transcript = result.transcript;
+        altSegments = result.altSegments;
+
+        console.log("[AI STT] AI STT result:", {
+          transcriptPreview: transcript ? transcript.slice(0, 80) : null,
+          altSegmentsCount: altSegments?.length || 0,
+        });
+      } catch (sttErr) {
+        console.error("[AI STT] ERROR inside sttViaAI()", {
+          message: sttErr.message,
+          stack: sttErr.stack,
+          response: sttErr.response?.data,
+        });
+
+        // Helpful error when ffmpeg not installed
+        if (String(sttErr?.message || "").includes("spawn ffmpeg")) {
+          return res.status(500).json(
+            errorResponse(
+              "FFMPEG_MISSING",
+              "ffmpeg is not installed or not in PATH on this server.",
+              500
+            )
+          );
+        }
+
+        return res
+          .status(500)
+          .json(errorResponse("AI_ERR", "AI STT server failed", 500));
+      }
+
+      return res.json(
+        successResponse({
+          text: transcript,
+          alternatives: altSegments,
+        })
+      );
+    } catch (err) {
+      console.error("[AI STT] Uncaught error:", {
+        message: err.message,
+        stack: err.stack,
       });
+
+      // Helpful error when ffmpeg missing
+      if (String(err?.message || "").includes("spawn ffmpeg")) {
+        return res.status(500).json(
+          errorResponse(
+            "FFMPEG_MISSING",
+            "ffmpeg is not installed or not in PATH on this server.",
+            500
+          )
+        );
+      }
 
       return res
         .status(500)
-        .json(errorResponse("AI_ERR", "AI STT server failed", 500));
+        .json(errorResponse("AI_ERR", "Unexpected STT failure", 500));
     }
-
-    return res.json(
-      successResponse({
-        text: transcript,
-        alternatives: altSegments,
-      })
-    );
-  } catch (err) {
-    console.error("[AI STT] Uncaught error:", {
-      message: err.message,
-      stack: err.stack,
-    });
-
-    return res
-      .status(500)
-      .json(errorResponse("AI_ERR", "Unexpected STT failure", 500));
-  }
-};
+  };
 
   // ============================
   // 2) TTS — via AI server
@@ -201,7 +309,6 @@ export default () => {
   // ============================
   // 3) Other AI endpoints via callAi
   // ============================
-
   controller.chat = (req, res) =>
     callAi("POST", "/api/ai/chat", req.body || {}, "Chat", res);
 
@@ -227,19 +334,13 @@ export default () => {
   };
 
   controller.resetConversation = (req, res) =>
-    callAi(
-      "POST",
-      "/api/conversation/reset",
-      req.body || {},
-      "ConversationReset",
-      res
-    );
+    callAi("POST", "/api/conversation/reset", req.body || {}, "ConversationReset", res);
 
   controller.health = (_req, res) =>
     callAi("GET", "/health", null, "Health", res);
 
   // ============================
-  // 4) Phrases — local static (this was missing!)
+  // 4) Phrases — local static
   // ============================
   controller.getPhrases = (_req, res) => {
     console.log("[AI Phrases] returning static phrases");
