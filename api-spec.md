@@ -1,4 +1,4 @@
-# LingoMate API 명세서 (v1.0)
+# LingoMate API 명세서 (v2.1)
 
 본 문서는 백엔드의 REST + WebSocket API 명세서이며, 사람이 읽는 요약/가이드입니다.
 
@@ -60,63 +60,73 @@
 
 ## 1. 사용자 인증 및 프로필 (Auth & Profile)
 
-### 1.1 회원가입 — POST /api/auth/register
+### 1.0 Auth0 사용 원칙
+	•	회원가입, 로그인, 비밀번호 변경, 계정 삭제는 모두 Auth0에서 처리
+	•	백엔드는 JWT 검증 + 유저 DB 관리 + 구독/설정/통계만 담당
+	•	JWT의 sub 필드를 auth0Id로 사용
 
-요청
+### 1.1 내 인증 정보 조회 — GET /api/auth/me (보호)
 
-{ "email":"user@example.com", "password":"Passw0rd!", "nickname":"JY" }
-
-응답(201)
-
-{ "success": true, "data": { "userId":"u_123", "email":"user@example.com" } }
-
-오류 400(필드누락), 409(이미 존재)
-
-### 1.2 로그인 — POST /api/auth/login
-
-요청
-
-{ "email":"user@example.com", "password":"Passw0rd!" }
+현재 토큰 기준 Auth0 계정 + 내부 유저 매핑 정보 조회.
 
 응답(200)
 
 {
   "success": true,
   "data": {
-    "userId":"u_123",
-    "accessToken":"<JWT>",
-    "refreshToken":"<JWT>",
-    "expiresIn":3600
+    "auth0Id": "auth0|abc123",
+    "userId": "u_123",
+    "email": "user@example.com",
+    "name": "JY",
+    "subscription": "premium"
   }
 }
 
-오류 401(자격증명 오류)
+### 1.2 프로필 조회 — GET /api/user/profile (보호)
 
-### 1.3 토큰 재발급 — POST /api/auth/refresh
-
-요청 { "refreshToken":"<JWT>" }
-응답 { "accessToken":"<JWT>", "expiresIn":3600 }
-
-### 1.4 로그아웃 — POST /api/auth/logout
-
-리프레시 토큰 블랙리스트 처리. 응답 204.
-
-### 1.5 프로필 조회 — GET /api/user/profile (보호)
-
-응답
+응답(200)
 
 {
   "success": true,
   "data": {
-    "userId":"u_123","email":"user@example.com","nickname":"JY",
-    "language":"en","level":"intermediate","avatarUrl":null
+    "userId": "u_123",
+    "email": "user@example.com",
+    "name": "JY",
+    "avatarUrl": null,
+    "subscription": "premium",
+
+    "country": "us",       // us / uk / aus
+    "style": "casual",     // casual / formal
+    "gender": "female",    // male / female
+    "streak": 12
   }
 }
 
-### 1.6 프로필 수정 — PUT /api/user/profile (보호)
+### 1.3 프로필 수정 — PUT /api/user/profile (보호)
 
-요청 { "nickname":"Jiyun", "language":"ja", "level":"beginner", "avatarUrl":null }
-응답 200 수정된 프로필 반환
+요청 
+
+{
+  "name": "Jiyun",
+  "avatarUrl": null,
+  "country": "uk",
+  "style": "formal",
+  "gender": "female"
+}
+
+응답 (200)
+
+{
+  "success": true,
+  "data": {
+    "userId": "u_123",
+    "name": "Jiyun",
+    "avatarUrl": null,
+    "country": "uk",
+    "style": "formal",
+    "gender": "female"
+  }
+}
 
 ⸻
 
@@ -124,128 +134,288 @@
 
 ### 2.1 세션 생성 — POST /api/conversation/start (보호)
 
+{ "success": true, 
+  "data": { 
+    "sessionId": "s_abc123", 
+    "startTime": "2025-10-06T11:00:00Z" 
+  } 
+}
+
+### 2.2 대화 종료 + 전체 스크립트 업로드 - POST /api/conversation/finish
+
 요청
-
-{ "language":"en", "scenario":"restaurant", "level":"beginner" }
-
-응답
-
-{ "success": true, "data": { "sessionId":"s_abc123", "startTime":"2025-10-06T11:00:00Z" } }
-
-### 2.2 메시지 전송 — POST /api/conversation/send (보호)
-
-요청
-
 {
-  "sessionId":"s_abc123",
-  "message":"How much is this?",
-  "meta": { "source":"text", "locale":"en-US" }
+  "sessionId": "s_abc123",
+  "script": [
+    { "from": "user", "text": "Hello!" },
+    { "from": "ai", "text": "Hi! How can I help you today?" },
+    { "from": "user", "text": "How much is this?" },
+    { "from": "ai", "text": "It's three dollars." }
+  ]
 }
 
 응답
-
 {
   "success": true,
   "data": {
-    "user": { "text":"How much is this?" },
-    "ai": { "text":"It costs three dollars.", "emotion":"smile" },
-    "sttConfidence": null
+    "sessionId": "s_abc123",
+    "savedMessages": 4
   }
 }
 
 ### 2.3 대화 내역 — GET /api/conversation/history (보호)
 
-쿼리: ?sessionId=s_abc123&page=1&limit=20
-응답 items[] + meta
+{
+  "success": true,
+  "data": [
+    {
+      "sessionId": "s_abc123",
+      "title": "In the public places",
+      "messageCount": 13,
+      "createdAt": "2025-11-19T09:00:00Z"
+    }
+  ],
+  "meta": { "page": 1, "limit": 20, "total": 1 }
+}
 
-### 2.4 대화 삭제 — DELETE /api/conversation/delete (보호)
+### 2.4 특정 대화 조회 — GET /api/conversation/:sessionId (보호)
+
+{
+  "success": true,
+  "data": {
+    "sessionId": "s_abc123",
+    "script": [
+      { "from": "user", "text": "Hello!" },
+      { "from": "ai", "text": "Hi! How can I help you today?" },
+      { "from": "user", "text": "How much is this?" },
+      { "from": "ai", "text": "It's three dollars." }
+    ]
+  }
+}
+
+### 2.5 대화 삭제 — DELETE /api/conversation/delete (보호)
 
 바디: { "sessionId":"s_abc123" } 또는 { "all": true }
 
-DB 필드 권장: id, session_id, user_id, role(user/ai), text, stt_conf, created_at
+DB 필드 권장:
+conversation_sessions
+	•	id
+	•	user_id
+	•	title
+	•	started_at
+	•	finished_at
+  •	updated_at
+	•	created_at
 
+conversation_scripts
+	•	id
+	•	session_id (FK)
+	•	script (JSON)  ← 메시지 전체 배열 저장
+	•	created_at
 ⸻
 
-## 3. 포인트 / 마일리지 (Points)
+## 3. 구독
 
-### 3.1 포인트 추가 — POST /api/points/add (보호)
+### 3.1 구독 옵션 조회 - GET /api/subscription/options
 
-요청 { "points": 10, "reason":"daily_login" }
-응답 { "balance": 120 }
+응답 (200)
 
-### 3.2 포인트 차감 — POST /api/points/deduct (보호)
+{
+  "success": true,
+  "data": {
+    "basic": { "callMinutes": 10, "scriptLimit": 3, "price": 0 },
+    "premium": { "callMinutes": "∞", "scriptLimit": "∞", "price": 12900 }
+  }
+}
 
-요청 { "points": 20, "reason":"premium_feature" }
-응답 { "balance": 100 }
+### 3.2 구독 시작/변경 — POST /api/subscription/subscribe (보호)
 
-### 3.3 변동 내역 — GET /api/points/history (보호)
+요청 
 
-쿼리: ?page=1&limit=20
-응답 items[] + meta
+{ "plan": "premium" }
 
-SQL 예시: user_points(user_id, delta, reason, balance_after, created_at)
+응답 (200)
+
+{
+  "success": true,
+  "data": {
+    "plan": "premium",
+    "startedAt": "2025-11-19T12:00:00Z"
+  }
+}
+
+### 3.3 구독 취소 — POST /api/subscription/cancel (보호)
+
+{
+  "success": true,
+  "data": {
+    "canceledAt": "2025-11-19T12:00:00Z"
+  }
+}
 
 ⸻
 
 ## 4. AI & 음성 (AI / NLP / Speech)
 
-### 4.1 응답 생성 — POST /api/ai/respond (보호)
+### 4.1 음성 -> 텍스트 (STT 결과)
 
-요청 { "sessionId":"s_abc123", "message":"I goed to school." }
-응답 { "ai": { "text":"I went to school." , "emotion":"neutral" } }
+클라이언트 -> 서버
+{
+  "type": "audio",
+  "audio": "<base64-wav>",
+  "mime": "audio/wav"
+}
 
-### 4.2 번역 — POST /api/ai/translate (보호)
+서버 -> 클라이언트
+{
+  "type": "stt_result",
+  "text": "How much is this?",
+  "confidence": 0.92
+}
 
-요청 { "text":"안녕", "source":"ko", "target":"en" }
-응답 { "text":"Hello" }
+### 4.2 AI 텍스트 응답 (Text → Text)
 
-### 4.3 음성 변환 — POST /api/ai/voice (보호)
+#### 4.2.1 클라이언트 -> 서버 텍스트 요청 -> AI 텍스트 응답 - POST /api/ai/chat
 
-요청(택1)
+요청
+{
+  "text": "Can you help me practice English?"
+}
 
-{ "text":"Nice to meet you.", "voice":"female_1", "rate":1.0 }
+응답
+{
+  "success": true,
+  "data": {
+    "text": "Sure! What part of English would you like to practice?"
+  }
+}
 
-또는 STT:
+### 4.3 AI 음성 응답 (Text -> Audio)
 
-{ "audio":"<base64-wav>", "sampleRate":16000 }
+#### 4.3.1 TTS - 텍스트 -> 오디오 변환 - POST /api/ai/tts
 
-응답 { "audio":"<base64-wav>", "mime":"audio/wav" } 또는 { "text":"recognized text", "sttConfidence":0.92 }
+요청
+{
+  "text": "Hello! How can I help you today?",
+  "voice": "female_1"   // optional
+}
+
+응답
+{
+  "success": true,
+  "data": {
+    "audio": "<base64-wav>",
+    "mime": "audio/wav"
+  }
+}
+
+### 4.4 AI 피드백 기능
+
+#### 4.4.1 AI 피드백 - 의미 + 예문 제공 - POST /api/ai/feedback
+
+요청
+{
+  "text": "Time flies."
+}
+
+응답
+{
+  "success": true,
+  "data": {
+    "meaning": "An expression used to say that time passes quickly.",
+    "examples": [
+      "Time flies when you're having fun.",
+      "Wow, it's already December—time really flies!",
+      "They grow up so fast. Time flies."
+    ]
+  }
+}
 
 ⸻
 
-## 5. 아바타 / 3D (Avatar)
+## 5. 회화 설정 (Conversation Settings)
 
-### 5.1 업로드 — POST /api/avatar/upload (보호)
+### 5.1 설정 조회 — GET /api/conversation/settings (보호)
 
-multipart/form-data — file(glb/vrm 등)
-응답 { "avatarId":"av_123", "modelUrl":"https://.../av_123.glb" }
+응답 (200) 
 
-### 5.2 설정 조회 — GET /api/avatar/config (보호)
+{
+  "success": true,
+  "data": {
+    "country": "us",      // us / uk / aus
+    "style": "casual",    // casual / formal
+    "gender": "female"    // male / female
+  }
+}
+ 
+### 설정 변경 — PUT /api/conversation/settings (보호)
 
-응답 { "voice":"female_1", "style":"casual", "emoteMap":{ "smile":"anim_01" } }
+요청 
 
-### 5.3 설정 수정 — PUT /api/avatar/update (보호)
+{
+  "country": "uk",
+  "style": "formal",
+  "gender": "male"
+}
 
-바디: { "voice":"male_2", "style":"formal" }
+응답 (200)
 
-메타데이터 권장: model_url, voice_type, style, emote_map(json)
+{
+  "success": true,
+  "data": {
+    "country": "uk",
+    "style": "formal",
+    "gender": "male"
+  }
+}
 
 ⸻
 
-## 6. 알림 (Notifications)
+## 6. 학습 통계 (Stats)
 
-### 6.1 목록 — GET /api/notifications (보호)
+### 6.1 통계 조회 — GET /api/stats (보호)
 
-쿼리: ?page=1&limit=20
-응답 items[] + meta
+응답 (200)
 
-### 6.2 읽음 — PUT /api/notifications/read (보호)
-
-바디: { "ids":["n_1","n_2"] } → 응답 204
+{
+  "success": true,
+  "data": {
+    "totalSessions": 127,
+    "totalMinutes": 1260,
+    "avgScore": 83,
+    "bestScore": 97,
+    "streak": 15,
+    "newWordsLearned": 53,
+    "progress": [1,1,1,0,0,0,0,0,0]
+  }
+}
 
 ⸻
 
-## 7. 실시간(WebSocket) — /realtime
+## 7. 스크립트(암기 문장) — Phrases
+
+### 7.1 기본 문장 조회 — GET /api/phrases
+
+[
+  { "id": 1, "en": "Way to go.", "kr": "잘했어" },
+  { "id": 2, "en": "Time flies.", "kr": "시간 빠르다" }
+]
+
+⸻
+
+## 8. 푸시 알림 — Notifications
+
+### 8.1 알림 설정 조회 — GET /api/notifications/settings
+
+{ "success": true, "data": { "enabled": true } }
+
+### 8.2 알림 설정 변경 — PUT /api/notifications/settings
+
+{ "enabled": false }
+
+⸻
+
+## 9. 실시간(WebSocket) — /realtime
 	•	URL: wss://api.lingomate.dev/realtime
 	•	인증: 연결 직후 메시지 { "type":"auth", "token":"<JWT>", "sessionId":"s_abc123" }
-	•	오디오: 16kHz PCM
+	• 오디오: audio/wav (16kHz, mono, PCM16, RIFF header)
