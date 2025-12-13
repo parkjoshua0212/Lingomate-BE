@@ -1,81 +1,122 @@
-import prisma from '../lib/prisma.js';
-import { successResponse, errorResponse } from '../utils/response.js';
+// src/controllers/authController.js
+import prisma from "../lib/prisma.js";
+import { successResponse, errorResponse } from "../utils/response.js";
 
 export default () => {
-    const controller = {};
+  const controller = {};
 
-    // ============================================================
-    // GET /api/auth/me
-    // Strict lookup version (NO auto-create)
-    // ============================================================
-    controller.getMe = async (req, res) => {
-        const auth0Sub = req.auth?.payload?.sub;
+  // Small helper: normalize optional strings
+  const clean = (v) => (typeof v === "string" && v.trim() ? v.trim() : null);
 
-        try {
-            const user = await prisma.user.findUnique({
-                where: { auth0Sub },   // strict lookup
-                include: { subscription: true }  // keep your version's include
-            });
+  // ============================================================
+  // GET /api/auth/me
+  // ✅ Auto-create user if missing (so new Auth0 accounts won't 404)
+  // ============================================================
+  controller.getMe = async (req, res) => {
+    const auth0Sub = req.auth?.payload?.sub;
 
-            if (!user) {
-                return res.status(404).json(
-                    errorResponse("AUTH_404", "User not registered in DB", 404)
-                );
-            }
+    try {
+      if (!auth0Sub) {
+        return res
+          .status(401)
+          .json(errorResponse("AUTH_401", "Missing auth subject", 401));
+      }
 
-            return res.json(successResponse({
-                auth0Id: auth0Sub,
-                userId: user.id,
-                email: user.email,
-                name: user.username,
-                subscription: user.subscription?.planName || "free",
-            }));
+      // ✅ Upsert guarantees the user exists after this call
+      const user = await prisma.user.upsert({
+        where: { auth0Sub },
+        update: {}, // don't overwrite anything on existing users
+        create: {
+          auth0Sub,
+          username: "User",
+          email: null,
+          avatarUrl: null,
+          stats: {
+            create: {
+              totalSentences: 0,
+              totalTimeMins: 0,
+              studyStreak: 0,
+              lastStudyDate: null,
+            },
+          },
+          subscription: {
+            create: { planName: "free", isActive: true },
+          },
+        },
+        include: { subscription: true },
+      });
 
-        } catch (err) {
-            return res.status(500).json(errorResponse("DB_ERR", err.message));
-        }
-    };
+      return res.json(
+        successResponse({
+          auth0Id: auth0Sub,
+          userId: user.id,
+          email: user.email,
+          name: user.username,
+          subscription: user.subscription?.planName || "free",
+        })
+      );
+    } catch (err) {
+      console.error("GET /auth/me error:", err);
+      return res.status(500).json(errorResponse("DB_ERR", err.message));
+    }
+  };
 
-    // ============================================================
-    // POST /api/auth/register-if-needed
-    // Auto-create version (from your original code)
-    // ============================================================
-    controller.syncUser = async (req, res) => {
-        const auth0Sub = req.auth?.payload?.sub;
-        const { username, email, avatarUrl } = req.body;
+  // ============================================================
+  // POST /api/auth/register-if-needed
+  // ✅ Create if missing + update fields if provided
+  // ============================================================
+  controller.syncUser = async (req, res) => {
+    const auth0Sub = req.auth?.payload?.sub;
 
-        try {
-            // 1. Check if user already exists
-            let user = await prisma.user.findUnique({
-                where: { auth0Sub },
-                include: { stats: true, subscription: true }
-            });
+    // ✅ prevent "Cannot destructure req.body" issues
+    const body = req.body ?? {};
+    const username = clean(body.username);
+    const email = clean(body.email);
+    const avatarUrl = clean(body.avatarUrl);
 
-            if (user) {
-                return res.json(successResponse(user, "Login successful"));
-            }
+    try {
+      if (!auth0Sub) {
+        return res
+          .status(401)
+          .json(errorResponse("AUTH_401", "Missing auth subject", 401));
+      }
 
-            // 2. Create new user (your Prisma create logic)
-            user = await prisma.user.create({
-                data: {
-                    auth0Sub,
-                    username: username || "User",
-                    email,
-                    avatarUrl,
-                    stats: { create: { totalSentences: 0, studyStreak: 0 } },
-                    subscription: { create: { planName: "free", isActive: true } }
-                },
-                include: { stats: true, subscription: true }
-            });
+      // ✅ Upsert ensures user exists; update only fields provided
+      const user = await prisma.user.upsert({
+        where: { auth0Sub },
+        update: {
+          ...(username ? { username } : {}),
+          ...(email ? { email } : {}),
+          ...(avatarUrl ? { avatarUrl } : {}),
+        },
+        create: {
+          auth0Sub,
+          username: username || "User",
+          email: email || null,
+          avatarUrl: avatarUrl || null,
+          stats: {
+            create: {
+              totalSentences: 0,
+              totalTimeMins: 0,
+              studyStreak: 0,
+              lastStudyDate: null,
+            },
+          },
+          subscription: {
+            create: { planName: "free", isActive: true },
+          },
+        },
+        include: { stats: true, subscription: true },
+      });
 
-            return res
-                .status(201)
-                .json(successResponse(user, "User registered successfully"));
+      // If it was newly created, Prisma doesn’t directly tell you here.
+      // So return 200 always; FE doesn’t really need 201 vs 200.
+      return res.json(successResponse(user, "User synced"));
+    } catch (err) {
+      console.error("POST /auth/register-if-needed error:", err);
+      return res.status(500).json(errorResponse("DB_ERR", err.message));
+    }
+  };
 
-        } catch (err) {
-            return res.status(500).json(errorResponse("DB_ERR", err.message));
-        }
-    };
-
-    return controller;
+  return controller;
 };
