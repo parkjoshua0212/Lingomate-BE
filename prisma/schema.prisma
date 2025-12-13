@@ -19,15 +19,13 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// 1. User Table
 model User {
   id            Int      @id @default(autoincrement()) @map("user_id")
   auth0Sub      String   @unique @map("auth0_sub") 
-  username      String?   @db.VarChar(100)
+  username      String?  @db.VarChar(100)
   email         String?  @unique @db.VarChar(255)
   avatarUrl     String?  @map("avatar_url")
   
-  // Settings (v2.1 defaults)
   countryPref   String   @default("us") @map("country_pref") 
   stylePref     String   @default("casual") @map("style_pref")   
   genderPref    String   @default("female") @map("gender_pref")     
@@ -43,7 +41,6 @@ model User {
   @@map("User")
 }
 
-// 2. User Statistics
 model UserStat {
   id             Int       @id @default(autoincrement())
   userId         Int       @unique @map("user_id")
@@ -56,7 +53,6 @@ model UserStat {
   @@map("UserStat")
 }
 
-// 3. Subscription
 model Subscription {
   id        Int       @id @default(autoincrement())
   userId    Int       @unique @map("user_id")
@@ -68,7 +64,6 @@ model Subscription {
   @@map("Subscription")
 }
 
-// Payment History
 model Payment {
   id            Int      @id @default(autoincrement())
   userId        Int      @map("user_id")
@@ -90,23 +85,21 @@ enum Role {
   PREMIUM
 }
 
-// 4. Conversation (Consolidated & Updated for v2.1)
 model Conversation {
   id           Int       @id @default(autoincrement()) @map("conversation_id")
   userId       Int       @map("user_id")
   
-  // Snapshot settings used for this specific chat
   countryUsed  String    @map("country_used") 
   styleUsed    String    @map("style_used")   
   genderUsed   String    @map("gender_used")  
 
   startedAt    DateTime  @default(now()) @map("started_at") @db.Timestamp(0)
-  
-  // [NEW v2.1] Tracks when the chat was finished/uploaded
   finishedAt   DateTime? @map("finished_at") @db.Timestamp(0)
 
-  // [NEW] for S3
   fullScript   String?   @db.LongText @map("full_script")
+
+  // ✅ NEW: score for this session (0-100 for example)
+  score        Int?      @map("score")
 
   user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages Message[]
@@ -115,16 +108,14 @@ model Conversation {
   @@map("Conversation")
 }
 
-// 5. Message (Script)
 model Message {
   id             Int           @id @default(autoincrement()) @map("message_id")
   conversationId Int           @map("conversation_id")
-  sender         MessageSender @default(USER) // 'user' or 'ai'
+  sender         MessageSender @default(USER)
   content        String        @db.Text
   
   createdAt      DateTime      @default(now()) @db.Timestamp(0)
 
-  // Optional fields for future features (bookmarking, corrections)
   correction     String?       @db.Text
   explanation    String?       @db.Text
   isBookmarked   Boolean       @default(false)
