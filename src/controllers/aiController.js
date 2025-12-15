@@ -154,7 +154,7 @@ export default () => {
       });
 
       // Allow either multipart file (req.file) or base64 payload (req.body.audioBase64)
-      if (!req.file) {
+      if (!req.file && req.body?.audioBase64) {
         const audioBase64 = req.body?.audioBase64;
         const fileName = req.body?.fileName || "audio.wav";
 
@@ -187,6 +187,13 @@ export default () => {
             .status(400)
             .json(errorResponse("BAD_REQ", "Invalid base64 audio", 400));
         }
+      }
+
+      if (!req.file) {
+        console.error("[AI STT] ERROR: No audio file uploaded (file or audioBase64 required)");
+        return res
+          .status(400)
+          .json(errorResponse("BAD_REQ", "Audio file required (field name: audio)", 400));
       }
 
       // ✅ Decide whether to convert:
