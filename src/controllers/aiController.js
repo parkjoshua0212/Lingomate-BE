@@ -153,8 +153,44 @@ export default () => {
         contentType: req.headers["content-type"],
       });
 
+      // Allow either multipart file (req.file) or base64 payload (req.body.audioBase64)
+      if (!req.file && req.body?.audioBase64) {
+        const audioBase64 = req.body?.audioBase64;
+        const fileName = req.body?.fileName || "audio.wav";
+
+        if (!audioBase64) {
+          console.error("[AI STT] ERROR: No audio file uploaded");
+          return res
+            .status(400)
+            .json(
+              errorResponse("BAD_REQ", "Audio file required (field name: audio)", 400)
+            );
+        }
+
+        try {
+          const buffer = Buffer.from(
+            audioBase64.replace(/^data:.*;base64,/, ""),
+            "base64"
+          );
+          req.file = {
+            buffer,
+            originalname: fileName,
+            mimetype: "application/octet-stream",
+          };
+          console.log("[AI STT] Received base64 audio", {
+            bytes: buffer.length,
+            fileName,
+          });
+        } catch (e) {
+          console.error("[AI STT] ERROR decoding base64 audio", e);
+          return res
+            .status(400)
+            .json(errorResponse("BAD_REQ", "Invalid base64 audio", 400));
+        }
+      }
+
       if (!req.file) {
-        console.error("[AI STT] ERROR: No audio file uploaded");
+        console.error("[AI STT] ERROR: No audio file uploaded (file or audioBase64 required)");
         return res
           .status(400)
           .json(errorResponse("BAD_REQ", "Audio file required (field name: audio)", 400));
