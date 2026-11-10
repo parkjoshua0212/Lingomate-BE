@@ -1,10 +1,8 @@
-import axios from "axios";
+// src/controllers/convController.js
 import prisma from "../lib/prisma.js";
 import { successResponse, errorResponse } from "../utils/response.js";
 
-const AI_URL = process.env.AI_SERVICE_URL || "http://localhost:8000";
-
-export default (wss) => {
+export default () => {
   const controller = {};
 
   // ============================================================
@@ -120,7 +118,7 @@ export default (wss) => {
       // --- 1) auth & user ---
       const user = await prisma.user.findUnique({
         where: { auth0Sub },
-        include: { stats: true }, // ✅ needed for streak
+        include: { stats: true }, // needed for streak
       });
 
       if (!user) {
@@ -146,7 +144,7 @@ export default (wss) => {
         return res.status(404).json(errorResponse("NOT_FOUND", "Conversation not found", 404));
       }
 
-      // ✅ Guard: prevent double-finish (prevents double stats increments)
+      // Guard: prevent double-finish (prevents double stats increments)
       if (conversation.finishedAt) {
         return res.status(400).json(errorResponse("BAD_REQ", "Session already finished", 400));
       }
@@ -174,7 +172,7 @@ export default (wss) => {
       const timeBasedMins = Math.ceil(durationSec / 60);
 
       const msgCount = messagesData.length;
-      const msgBasedMins = Math.ceil(msgCount / 6); // tune if needed
+      const msgBasedMins = Math.ceil(msgCount / 6);
 
       const sessionMins = Math.max(1, timeBasedMins, msgBasedMins);
 
@@ -203,7 +201,7 @@ export default (wss) => {
       }
 
       // ============================================================
-      // ✅ SIMPLE BACKEND SCORE (fast implementation)
+      // SIMPLE BACKEND SCORE
       // - If FE provides `score` number: use that
       // - else compute based on user messages + characters
       // ============================================================
@@ -227,7 +225,7 @@ export default (wss) => {
           data: {
             fullScript: JSON.stringify(history),
             finishedAt,
-            score: finalScore, // ✅ always saved now
+            score: finalScore,
           },
         });
 
@@ -279,10 +277,18 @@ export default (wss) => {
   // ============================================================
   controller.getSession = async (req, res) => {
     const { sessionId } = req.params;
+    const auth0Sub = req.auth?.payload?.sub;
 
     try {
-      const conv = await prisma.conversation.findUnique({
-        where: { id: parseInt(sessionId, 10) },
+      const user = await prisma.user.findUnique({ where: { auth0Sub } });
+
+      if (!user) {
+        return res.status(404).json(errorResponse("USER_404", "User not found", 404));
+      }
+
+      // Scope to the caller: someone else's session is indistinguishable from a missing one (404)
+      const conv = await prisma.conversation.findFirst({
+        where: { id: parseInt(sessionId, 10), userId: user.id },
         include: {
           messages: { orderBy: { id: "asc" } },
         },

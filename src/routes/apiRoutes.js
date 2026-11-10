@@ -9,7 +9,7 @@ import conversationController from '../controllers/convController.js';
 import aiController from '../controllers/aiController.js';
 import subscriptionController from '../controllers/subscriptionController.js';
 import statsController from '../controllers/statsController.js';
-import homeController from '../controllers/home.controller.js';
+import homeController from '../controllers/homeController.js';
 
 // ==================== SETUP ====================
 const router = express.Router();
@@ -26,10 +26,10 @@ const checkJwt = checkJwtMiddleware({
 });
 
 // ==================== ROUTES ====================
-export default (wss) => {
+export default () => {
   const auth = authController();
   const user = userController();
-  const conv = conversationController(wss);
+  const conv = conversationController();
   const ai = aiController();
   const sub = subscriptionController();
   const stats = statsController();
@@ -50,9 +50,14 @@ export default (wss) => {
   // ==================== CONVERSATION HISTORY ====================
   router.post('/conversation/reset', checkJwt, conv.reset);
   router.get('/conversation/history', checkJwt, conv.getHistory);
-
-  router.get('/conversation/:sessionId', checkJwt, conv.getSession);
   router.delete('/conversation/delete', checkJwt, conv.deleteSession);
+
+  // ==================== USER SETTINGS ====================
+  router.get('/conversation/settings', checkJwt, user.getSettings);
+  router.put('/conversation/settings', checkJwt, user.updateSettings);
+
+  // Parameterized route goes last so it can't shadow static /conversation/* routes
+  router.get('/conversation/:sessionId', checkJwt, conv.getSession);
 
   // ==================== AI ROUTES ====================
   router.post('/ai/stt', checkJwt, upload.single('audio'), ai.stt);
@@ -71,10 +76,6 @@ export default (wss) => {
 
   // ==================== PHRASES ROUTE ====================
   router.get('/phrases', ai.getPhrases);
-
-  // ==================== USER SETTINGS ====================
-  router.get('/conversation/settings', checkJwt, user.getSettings);
-  router.put('/conversation/settings', checkJwt, user.updateSettings);
 
   // ==================== STATS ====================
   router.get('/stats', checkJwt, stats.getStats);
