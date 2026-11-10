@@ -1,14 +1,9 @@
+// src/lib/aiSttClient.js
 import axios from 'axios';
 
 const AI_BASE_URL = process.env.AI_SERVICE_URL;
 
 export async function sttViaAI(pcmBuffer, sampleRate = 16000) {
-  console.log('[AI STT wrapper] Sending to AI server...', {
-    url: `${AI_BASE_URL}/api/stt/recognize`,
-    bytes: pcmBuffer.length,
-    sampleRate,
-  });
-
   try {
     const response = await axios.post(
       `${AI_BASE_URL}/api/stt/recognize`,
@@ -22,8 +17,6 @@ export async function sttViaAI(pcmBuffer, sampleRate = 16000) {
         maxContentLength: Infinity,
       }
     );
-
-    console.log('[AI STT wrapper] AI server response:', response.data);
 
     return {
       transcript: response.data?.data?.transcript || '',

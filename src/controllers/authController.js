@@ -10,7 +10,7 @@ export default () => {
 
   // ============================================================
   // GET /api/auth/me
-  // ✅ Auto-create user if missing (so new Auth0 accounts won't 404)
+  // Auto-create user if missing (so new Auth0 accounts won't 404)
   // ============================================================
   controller.getMe = async (req, res) => {
     const auth0Sub = req.auth?.payload?.sub;
@@ -22,7 +22,7 @@ export default () => {
           .json(errorResponse("AUTH_401", "Missing auth subject", 401));
       }
 
-      // ✅ Upsert guarantees the user exists after this call
+      // Upsert guarantees the user exists after this call
       const user = await prisma.user.upsert({
         where: { auth0Sub },
         update: {}, // don't overwrite anything on existing users
@@ -63,12 +63,12 @@ export default () => {
 
   // ============================================================
   // POST /api/auth/register-if-needed
-  // ✅ Create if missing + update fields if provided
+  // Create if missing + update fields if provided
   // ============================================================
   controller.syncUser = async (req, res) => {
     const auth0Sub = req.auth?.payload?.sub;
 
-    // ✅ prevent "Cannot destructure req.body" issues
+    // prevent "Cannot destructure req.body" issues
     const body = req.body ?? {};
     const username = clean(body.username);
     const email = clean(body.email);
@@ -81,7 +81,7 @@ export default () => {
           .json(errorResponse("AUTH_401", "Missing auth subject", 401));
       }
 
-      // ✅ Upsert ensures user exists; update only fields provided
+      // Upsert ensures user exists; update only fields provided
       const user = await prisma.user.upsert({
         where: { auth0Sub },
         update: {

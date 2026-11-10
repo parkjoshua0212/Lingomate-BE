@@ -32,7 +32,6 @@ export default () => {
           startedAt: true,
           finishedAt: true,
           _count: { select: { messages: true } },
-          // score will exist after schema update (step 2)
           score: true,
         },
       });
@@ -51,13 +50,13 @@ export default () => {
         const timeBasedMins = Math.ceil(durationSec / 60);
 
         const msgCount = c._count?.messages ?? 0;
-        const msgBasedMins = Math.ceil(msgCount / 6); // tune ratio if you want
+        const msgBasedMins = Math.ceil(msgCount / 6);
 
         const sessionMins = Math.max(1, timeBasedMins, msgBasedMins);
         totalMinutes += sessionMins;
       }
 
-      // 3) Scores (after schema update). If no scores recorded yet -> 0.
+      // 3) Scores. If no scores recorded yet -> 0.
       let avgScore = 0;
       let bestScore = 0;
 
@@ -70,7 +69,7 @@ export default () => {
         bestScore = Math.max(...scored.map(c => c.score ?? 0));
       }
 
-      // 4) Streak + “학습한 단어 및 문장”
+      // 4) Streak + learned sentences
       const streak = user.stats?.studyStreak ?? 0;
       const newWordsLearned = user.stats?.totalSentences ?? 0;
 

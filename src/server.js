@@ -9,7 +9,6 @@ import http from "http";
 import { WebSocketServer } from "ws";
 import swaggerUi from "swagger-ui-express";
 import swaggerJSDoc from "swagger-jsdoc";
-import { auth as jwtAuth } from "express-oauth2-jwt-bearer";
 import jwt from "jsonwebtoken";
 import jwksClient from "jwks-rsa";
 
@@ -19,8 +18,7 @@ const app = express();
 const PORT = process.env.PORT || 8080;
 
 const PUBLIC_BASE_URL =
-  process.env.PUBLIC_BASE_URL ||
-  "http://lingomate-backend.ap-northeast-2.elasticbeanstalk.com";
+  process.env.PUBLIC_BASE_URL || `http://localhost:${PORT}`;
 
 // -------------------------------------------------------------
 // ENVIRONMENT CHECKS
@@ -42,13 +40,6 @@ app.use(cors({ origin: "*", credentials: true }));
 // Support large audio uploads (10mb)
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
-
-// Auth middleware (not applied globally)
-const checkJwt = jwtAuth({
-  issuerBaseURL: AUTH0_ISSUER,
-  audience: AUTH0_AUDIENCE,
-  tokenSigningAlg: "RS256",
-});
 
 // -------------------------------------------------------------
 // JWKS FOR WEBSOCKETS
@@ -153,7 +144,6 @@ wss.on("connection", (ws) => {
 
   ws.isAlive = true;
   ws.on("pong", () => (ws.isAlive = true));
-  ws.on("message", (msg) => console.log("[WS MSG]", msg.toString()));
   ws.on("close", () => console.log("[WS] Disconnected"));
 });
 
@@ -169,7 +159,7 @@ setInterval(() => {
 // -------------------------------------------------------------
 // ROUTES
 // -------------------------------------------------------------
-app.use("/api", apiRoutes(checkJwt, wss));
+app.use("/api", apiRoutes());
 
 // -------------------------------------------------------------
 // START SERVER
