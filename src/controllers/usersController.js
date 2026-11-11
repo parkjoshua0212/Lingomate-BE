@@ -42,7 +42,7 @@ export default () => {
             }));
         } catch (err) {
             console.error("Get Profile Error:", err);
-            res.status(500).json(errorResponse("SERVER_ERR", err.message));
+            res.status(500).json(errorResponse("SERVER_ERR", "Failed to load profile"));
         }
     };
 
@@ -98,7 +98,8 @@ export default () => {
                 gender: user.genderPref
             }));
         } catch (err) {
-            res.status(500).json(errorResponse("SERVER_ERR", err.message));
+            console.error("Get Settings Error:", err);
+            res.status(500).json(errorResponse("SERVER_ERR", "Failed to load settings"));
         }
     };
 

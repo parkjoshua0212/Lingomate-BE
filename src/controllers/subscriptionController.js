@@ -107,7 +107,7 @@ export default () => {
       }
 
     } catch (error) {
-      console.error("[Subscription] payment processing error:", error.message);
+      console.error("[Subscription] payment processing error:", error);
       return res.status(500).json(errorResponse('SERVER_ERR', '서버 에러 발생', 500));
     }
   };

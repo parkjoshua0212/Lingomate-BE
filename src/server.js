@@ -35,7 +35,36 @@ if (!AUTH0_DOMAIN || !AUTH0_ISSUER || !AUTH0_AUDIENCE) {
 // -------------------------------------------------------------
 // EXPRESS MIDDLEWARE
 // -------------------------------------------------------------
-app.use(cors({ origin: "*", credentials: true }));
+// CORS allowlist from CORS_ORIGINS (comma-separated). If unset, only localhost
+// origins (any port) are allowed. Requests without an Origin header (native
+// apps, curl, server-to-server) are not subject to CORS and pass through.
+const CORS_ORIGINS = (process.env.CORS_ORIGINS || "")
+  .split(",")
+  .map((o) => o.trim().replace(/\/+$/, ""))
+  .filter(Boolean);
+
+function isLocalhostOrigin(origin) {
+  try {
+    const { hostname } = new URL(origin);
+    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
+  } catch {
+    return false;
+  }
+}
+
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin) return callback(null, true);
+      const allowed = CORS_ORIGINS.length
+        ? CORS_ORIGINS.includes(origin)
+        : isLocalhostOrigin(origin);
+      // Disallowed origins get no CORS headers (browser blocks), not a server error
+      callback(null, allowed);
+    },
+    credentials: true,
+  })
+);
 
 // Support large audio uploads (10mb)
 app.use(express.json({ limit: "10mb" }));

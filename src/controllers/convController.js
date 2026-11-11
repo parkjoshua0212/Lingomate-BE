@@ -102,7 +102,7 @@ export default () => {
       );
     } catch (err) {
       console.error("START SESSION ERROR:", err);
-      return res.status(500).json(errorResponse("SERVER_ERR", err.message));
+      return res.status(500).json(errorResponse("SERVER_ERR", "Failed to start session"));
     }
   };
 
@@ -268,7 +268,7 @@ export default () => {
       );
     } catch (err) {
       console.error("FINISH SESSION ERROR:", err);
-      return res.status(500).json(errorResponse("SERVER_ERR", err.message || "Failed to save conversation"));
+      return res.status(500).json(errorResponse("SERVER_ERR", "Failed to save conversation"));
     }
   };
 
@@ -279,6 +279,11 @@ export default () => {
     const { sessionId } = req.params;
     const auth0Sub = req.auth?.payload?.sub;
 
+    const id = Number(sessionId);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json(errorResponse("BAD_REQ", "Invalid sessionId", 400));
+    }
+
     try {
       const user = await prisma.user.findUnique({ where: { auth0Sub } });
 
@@ -288,7 +293,7 @@ export default () => {
 
       // Scope to the caller: someone else's session is indistinguishable from a missing one (404)
       const conv = await prisma.conversation.findFirst({
-        where: { id: parseInt(sessionId, 10), userId: user.id },
+        where: { id, userId: user.id },
         include: {
           messages: { orderBy: { id: "asc" } },
         },
@@ -310,7 +315,7 @@ export default () => {
       );
     } catch (err) {
       console.error("GET SESSION ERROR:", err);
-      return res.status(500).json(errorResponse("SERVER_ERR", err.message));
+      return res.status(500).json(errorResponse("SERVER_ERR", "Failed to load session"));
     }
   };
 

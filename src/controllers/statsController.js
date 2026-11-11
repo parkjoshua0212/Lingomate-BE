@@ -121,7 +121,7 @@ export default () => {
       );
     } catch (err) {
       console.error("Get Stats Error:", err);
-      return res.status(500).json(errorResponse("SERVER_ERR", err.message));
+      return res.status(500).json(errorResponse("SERVER_ERR", "Failed to load stats"));
     }
   };
 

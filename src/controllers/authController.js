@@ -57,7 +57,7 @@ export default () => {
       );
     } catch (err) {
       console.error("GET /auth/me error:", err);
-      return res.status(500).json(errorResponse("DB_ERR", err.message));
+      return res.status(500).json(errorResponse("DB_ERR", "Database error"));
     }
   };
 
@@ -114,7 +114,7 @@ export default () => {
       return res.json(successResponse(user, "User synced"));
     } catch (err) {
       console.error("POST /auth/register-if-needed error:", err);
-      return res.status(500).json(errorResponse("DB_ERR", err.message));
+      return res.status(500).json(errorResponse("DB_ERR", "Database error"));
     }
   };
 
