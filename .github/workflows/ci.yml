@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      # Dummy value: the Prisma schema reads DATABASE_URL, but CI never connects to a database.
+      DATABASE_URL: mysql://user:pass@localhost:3306/db
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies (runs prisma generate)
+        run: npm ci
+
+      - name: Validate Prisma schema
+        run: npx prisma validate
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Syntax check
+        run: npm run check
+
+      - name: Build Docker image
+        run: docker build -t lingomate-be .

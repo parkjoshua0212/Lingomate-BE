@@ -7,7 +7,6 @@ import authController from '../controllers/authController.js';
 import userController from '../controllers/usersController.js';
 import conversationController from '../controllers/convController.js';
 import aiController from '../controllers/aiController.js';
-import subscriptionController from '../controllers/subscriptionController.js';
 import statsController from '../controllers/statsController.js';
 import homeController from '../controllers/homeController.js';
 
@@ -31,7 +30,6 @@ export default () => {
   const user = userController();
   const conv = conversationController();
   const ai = aiController();
-  const sub = subscriptionController();
   const stats = statsController();
   const home = homeController();
 

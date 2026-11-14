@@ -6,9 +6,11 @@
   "type": "module",
   "scripts": {
     "dev": "node --env-file=.env --experimental-strip-types src/server.js",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "npm run lint && npm run check",
     "start": "node src/server.js",
-    "postinstall": "npx prisma generate"
+    "postinstall": "npx prisma generate",
+    "lint": "eslint .",
+    "check": "find src -name \"*.js\" -print0 | xargs -0 -n1 node --check"
   },
   "repository": {
     "type": "git",
@@ -36,6 +38,9 @@
     "ws": "^8.18.3"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "eslint": "^9.39.5",
+    "globals": "^17.14.0",
     "prisma": "^6.18.0"
   }
 }

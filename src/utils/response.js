@@ -12,7 +12,7 @@ export const successResponse = (data, message = "ok") => {
     };
 };
 
-export const errorResponse = (code, message, status = 500) => {
+export const errorResponse = (code, message) => {
     return {
         success: false,
         code: code,

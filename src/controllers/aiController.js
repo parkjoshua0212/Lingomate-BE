@@ -121,10 +121,14 @@ async function convertUploadToPcm16kMono(file) {
   } finally {
     try {
       if (fs.existsSync(inPath)) fs.unlinkSync(inPath);
-    } catch {}
+    } catch {
+      // best-effort temp file cleanup
+    }
     try {
       if (fs.existsSync(outPath)) fs.unlinkSync(outPath);
-    } catch {}
+    } catch {
+      // best-effort temp file cleanup
+    }
   }
 }
 

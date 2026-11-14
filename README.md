@@ -1,5 +1,7 @@
 # LingoMate Backend
 
+[![CI](https://github.com/parkjoshua0212/Lingomate-BE/actions/workflows/ci.yml/badge.svg)](https://github.com/parkjoshua0212/Lingomate-BE/actions/workflows/ci.yml)
+
 REST + WebSocket API for **LingoMate**, a mobile app for practising spoken English conversation with an AI partner.
 
 > **Team project (7 members).** I owned the backend (this repository) and the AWS deployment.
@@ -103,6 +105,10 @@ docker run --env-file .env -p 3000:3000 lingomate-backend
 ```
 
 The container listens on port 3000. Run `npx prisma db push` against your database once (from the host, with `DATABASE_URL` set) before first use. The image does not include `ffmpeg`, so the STT endpoint only works on the host or on Elastic Beanstalk, where the predeploy hook installs it.
+
+## CI
+
+[GitHub Actions](.github/workflows/ci.yml) runs on every push and pull request to `main`: `npm ci`, `prisma validate`, ESLint (`npm run lint`), a `node --check` syntax check of `src/` (`npm run check`) and a Docker image build. It does not connect to a database or AWS. There are no automated tests yet.
 
 ## Project structure
 

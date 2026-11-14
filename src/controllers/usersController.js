@@ -125,7 +125,7 @@ export default () => {
                 style: updatedUser.stylePref,
                 gender: updatedUser.genderPref
             }));
-        } catch (err) {
+        } catch {
             res.status(500).json(errorResponse("UPDATE_ERR", "Update settings failed"));
         }
     };
