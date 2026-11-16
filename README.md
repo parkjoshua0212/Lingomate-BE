@@ -4,8 +4,20 @@
 
 REST + WebSocket API for **LingoMate**, a mobile app for practising spoken English conversation with an AI partner.
 
-> **Team project (7 members).** I owned the backend (this repository) and the AWS deployment.
-> The mobile client and the AI service (chat, feedback, speech-to-text, text-to-speech) were built by teammates in separate repositories.
+> **한국어 요약:** AI와 영어 회화를 연습하는 모바일 앱 LingoMate의 백엔드(REST + WebSocket API)입니다. 7인 산학협력 팀 프로젝트였으며, 저는 백엔드 API 개발의 대부분과 AWS 배포(EC2에 첫 배포 → Elastic Beanstalk로 이전, RDS MySQL)를 담당했습니다. 팀원이 작성한 부분은 아래 표에 구분해 두었습니다.
+
+## My role
+
+A 7-person industry–academia (산학) team project. The mobile client and the AI service (chat, feedback, speech-to-text, text-to-speech) were built by teammates in separate repositories. This backend was shared work, split as follows:
+
+| Who | What |
+| --- | --- |
+| **Me** | Most of the API: the routes in `apiRoutes.js` and the auth, user, conversation, AI-proxy and stats controllers. The WebSocket auth, the response envelope, and most of the Prisma schema. |
+| **Me: AWS** | Deployed the API to an Ubuntu **EC2** instance (Nov 2025), then moved it to **Elastic Beanstalk** (Dec 2025, with the `ffmpeg` predeploy hook) in place of manual `rsync` deploys over SSH. Set up **RDS MySQL** as the database. |
+| **Me: after the project** | Nov 2026 hardening in this repo: conversation-ownership checks, CORS allowlist, no internal error messages in responses, secrets moved to environment variables, removal of debug code, and the GitHub Actions CI. |
+| Teammates | The initial project skeleton and first Prisma schema, the PortOne subscription/billing controller and its payment verification, the WebSocket server's first version, the Korean API spec (`api-spec.md`), the Swagger setup, S3 transcript upload, and STT fixes. |
+
+`git blame` on today's `src/` and `prisma/` attributes about 90% of lines to me, but that number includes my later cleanup. The commit history shows who wrote what.
 
 ## Tech stack
 
@@ -18,7 +30,7 @@ REST + WebSocket API for **LingoMate**, a mobile app for practising spoken Engli
 | Audio | `multer` uploads, `ffmpeg` conversion to 16 kHz mono PCM before forwarding to the AI service |
 | Payments | PortOne (iamport) server-side payment verification |
 | API docs | Swagger UI at `/api-docs` (`swagger-jsdoc`), written spec in [`api-spec.md`](api-spec.md) |
-| Infra | Docker, AWS Elastic Beanstalk (`.platform/hooks`), AWS RDS |
+| Infra | Docker, AWS EC2 (first deployment), then Elastic Beanstalk on EC2 (`.platform/hooks`), AWS RDS MySQL |
 
 ## Architecture
 
